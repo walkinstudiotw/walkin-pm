@@ -601,11 +601,12 @@ select.form-select:focus{border-color:#666666}
 <!-- TAB: CASES -->
 <div class="tab-panel active" id="tab-cases">
   <div class="filter-bar">
-    <button class="filter-pill active" data-cf-status="all">全部狀態</button>
+    <button class="filter-pill active" data-cf-status="active">進行中</button>
     <button class="filter-pill" data-cf-status="todo">待開始</button>
     <button class="filter-pill" data-cf-status="doing">執行中</button>
     <button class="filter-pill" data-cf-status="editing">修改中</button>
     <button class="filter-pill" data-cf-status="done">已完成</button>
+    <button class="filter-pill" data-cf-status="all">全部</button>
     <div class="filter-sep"></div>
     <input type="hidden" id="cf-client" value="all">
     <div class="qi-master-picker" style="width:160px">
@@ -1479,7 +1480,7 @@ const S={
   invoiceFilter:{month:'all',client:'all',status:'all'},
   invoiceViewMode:'list',  // 'list' | 'editor'
   selectedInvoiceId:null,
-  cf:{status:'all',client:'all',month:'all',search:''},
+  cf:{status:'active',client:'all',month:'all',search:''},
   wiSearch:'',
   wiSelectedCategory:'all',          // 'all' | category name
   wiRenamingCategory:null,           // category being inline-renamed
@@ -1747,7 +1748,8 @@ function refreshMonthFilter(){
 // ── RENDER: CASES ──────────────────────────────────
 function filteredCases(){
   let arr=caseList();
-  if(S.cf.status!=='all')arr=arr.filter(c=>(c.status||'todo')===S.cf.status);
+  if(S.cf.status==='active')arr=arr.filter(c=>(c.status||'todo')!=='done');
+  else if(S.cf.status!=='all')arr=arr.filter(c=>(c.status||'todo')===S.cf.status);
   const cl=document.getElementById('cf-client').value;
   if(cl&&cl!=='all')arr=arr.filter(c=>c.clientId===cl);
   const mo=document.getElementById('cf-month').value;
