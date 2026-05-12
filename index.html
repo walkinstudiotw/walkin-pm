@@ -820,6 +820,25 @@ select.form-select:focus{border-color:#666666}
   </div>
 </div>
 
+<!-- AI MULTI-CASE PREVIEW MODAL -->
+<div class="modal-overlay" id="ai-multi-modal">
+  <div class="modal modal-lg" style="max-width:920px">
+    <div class="modal-title">🪄 AI 找到 <span id="aim-count">0</span> 個案件 — 請確認後建立</div>
+    <p style="font-size:.72rem;color:#888;margin:0 0 8px;line-height:1.55">勾選要建立的案件、點欄位可直接修改。日期格式 <code style="background:#f0f0f0;padding:1px 4px;border-radius:3px">YYYY-MM-DD</code>。建立後可在案件列表進一步編輯細節。</p>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <span style="font-size:.66rem;color:#666" id="aim-summary"></span>
+      <span class="spacer" style="flex:1"></span>
+      <button class="nav-btn" onclick="aimToggleAll()" style="font-size:.66rem;padding:2px 8px">全選 / 取消</button>
+    </div>
+    <div id="aim-list" style="max-height:420px;overflow:auto;background:#fafafa;border:1px solid #e8e8e8;border-radius:8px;padding:6px"></div>
+    <div id="aim-status" style="font-size:.7rem;margin-top:6px;min-height:14px"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeM('ai-multi-modal')">取消</button>
+      <button class="btn-primary" onclick="aimConfirm()">建立勾選的案件</button>
+    </div>
+  </div>
+</div>
+
 <!-- CASE MODAL -->
 <div class="modal-overlay" id="case-modal">
   <div class="modal modal-lg">
@@ -4238,12 +4257,16 @@ async function aiAnalyze(){
     const items=(c.quotation?.items||[]).map(it=>`{itemId:"${it.itemId}",label:"${it.label}",category:"${it.category}",price:${it.defaultPrice}}`).join(',');
     return`{id:"${c.id}",name:"${c.name}",items:[${items}]}`;
   }).join(',\n');
-  const sysPrompt=`你是 WalkIn Studio 的案件登記助理。從使用者貼上的對話文字或上傳的圖片（LINE / Messenger / Email 截圖等）中，抽取一個案件的資訊並回覆嚴格 JSON。如果圖片是聊天截圖，請辨識訊息往來內容；如果是文件/合約/報價單截圖，請從中抽取相關欄位。
+  const sysPrompt=`你是 WalkIn Studio 的案件登記助理。從使用者貼上的對話文字或上傳的圖片（LINE / Messenger / Email 截圖等）中，抽取案件資訊並回覆嚴格 JSON。如果圖片是聊天截圖，請辨識訊息往來內容；如果是文件/合約/報價單截圖，請從中抽取相關欄位。
 
 可選客戶清單（每位客戶有自己的報價項目）：
 [${clientCtx}]
 
-你必須回傳此格式 JSON（不要額外文字）：
+回傳格式：
+- **單一案件** → 回傳一個物件 {...}
+- **多個案件**（例如多集 EP、多筆排程、報價單列了好幾項要做的事）→ 回傳物件陣列 [{...}, {...}, ...]
+
+每個物件結構：
 {
   "clientId": string|null,         // 對應到上面 clients 的 id；找不到則 null
   "clientNameGuess": string|null,  // 若 clientId 為 null，這裡填從對話辨識到的客戶名稱
@@ -4260,7 +4283,16 @@ async function aiAnalyze(){
 規則：
 - 若對話沒提到的欄位填 null
 - 日期一定要 YYYY-MM-DD 格式；當年若未明說，預設今年（${new Date().getFullYear()}）
-- type 與 quotationItemId 要對應到該客戶的報價單；如果找到 quotationItemId 就把 amount 填成該項目價格`;
+- type 與 quotationItemId 要對應到該客戶的報價單；如果找到 quotationItemId 就把 amount 填成該項目價格
+- 不要額外文字，只回 JSON（單一物件或陣列）
+
+WalkIn Studio 領域慣例（很重要）：
+- 「Podcast + Video Podcast」這個組合表示**每一集都有兩個獨立案件**（純音 Podcast + 含影片 Video Podcast）。請拆成兩個案件
+- 「共 N 集」+ 多個 type → 回傳 N × type 數量 個案件
+  例：「共 3 集 Podcast + Video Podcast」 → 回傳 6 個案件
+- 案件標題慣例：「EP[編號] [主題或來賓名]」。若使用者沒給編號，用 EP1, EP2, EP3...（之後使用者會在預覽視窗手動改）
+- 若同主題有多種 type，產出順序：先列同集的 Podcast 再 Video Podcast，再下一集
+- 純音檔 Podcast 通常比 Video Podcast 早 7 天交期（若使用者有給上架日，Podcast 填上架日 -7 天，Video Podcast 填上架日）`;
   try{
     const resp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
@@ -4292,13 +4324,28 @@ async function aiAnalyze(){
     }
     const data=await resp.json();
     const replyText=data.content?.[0]?.text||'';
-    // Extract JSON (handle ```json wrappers)
-    const jsonMatch=replyText.match(/\{[\s\S]*\}/);
-    if(!jsonMatch)throw new Error('AI 回覆不是有效 JSON');
-    const parsed=JSON.parse(jsonMatch[0]);
-    fillCaseFormFromAi(parsed);
-    status.textContent=`✓ 分析完成${parsed.clientNameGuess&&!parsed.clientId?` （提示：未在客戶名單找到「${parsed.clientNameGuess}」，請手動選擇或先建立客戶）`:''}`;
-    status.className='ai-status ok';
+    // Try to extract a JSON array first, fall back to object
+    const arrMatch=replyText.match(/\[[\s\S]*\]/);
+    const objMatch=replyText.match(/\{[\s\S]*\}/);
+    let parsed;
+    if(arrMatch){parsed=JSON.parse(arrMatch[0]);}
+    else if(objMatch){parsed=JSON.parse(objMatch[0]);}
+    else throw new Error('AI 回覆不是有效 JSON');
+    const cases=Array.isArray(parsed)?parsed:[parsed];
+    if(cases.length===0)throw new Error('AI 沒辨識到任何案件');
+    if(cases.length===1){
+      // Single case → fill the modal (existing behavior)
+      fillCaseFormFromAi(cases[0]);
+      const cs=cases[0];
+      status.textContent=`✓ 分析完成${cs.clientNameGuess&&!cs.clientId?` （提示：未在客戶名單找到「${cs.clientNameGuess}」，請手動選擇或先建立客戶）`:''}`;
+      status.className='ai-status ok';
+    }else{
+      // Multiple → open the multi-case preview modal for user to review/select
+      closeM('case-modal');
+      openAiMultiPreview(cases);
+      status.textContent=`✓ AI 找到 ${cases.length} 個案件 — 請於預覽視窗確認後建立`;
+      status.className='ai-status ok';
+    }
   }catch(e){
     console.error(e);
     status.textContent=`✗ ${e.message}`;
@@ -4307,6 +4354,103 @@ async function aiAnalyze(){
     btn.disabled=false;
   }
 }
+// ── AI MULTI-CASE PREVIEW ─────────────────────────
+let _aimCases=[];
+let _aimSelected=[];
+function openAiMultiPreview(cases){
+  _aimCases=cases.map(c=>({
+    clientId:c.clientId&&S.clients[c.clientId]?c.clientId:'',
+    clientNameGuess:c.clientNameGuess||'',
+    title:c.title||'',
+    type:c.type||'Podcast',
+    quotationItemId:c.quotationItemId||null,
+    amount:c.amount==null?'':c.amount,
+    dueDate:c.dueDate||'',
+    materialNote:c.materialNote||'',
+    paymentNote:c.paymentNote||'',
+    notes:c.notes||'',
+  }));
+  _aimSelected=_aimCases.map(()=>true);
+  document.getElementById('aim-count').textContent=_aimCases.length;
+  document.getElementById('aim-status').textContent='';
+  renderAimList();
+  openM('ai-multi-modal');
+}
+function renderAimList(){
+  const list=document.getElementById('aim-list');
+  if(!list)return;
+  const clientOptsHtml=clientList().map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+  const typeOpts=['Podcast','Video Podcast','錄音','其他'];
+  list.innerHTML=_aimCases.map((cs,i)=>{
+    const checked=_aimSelected[i];
+    const noClient=!cs.clientId;
+    const rowDim=checked?'':'opacity:.4';
+    const warn=noClient?`<div style="font-size:.6rem;color:#a86a00;margin-top:3px">⚠️ 未對應到客戶${cs.clientNameGuess?`（AI 猜：${escHtml(cs.clientNameGuess)}）`:''}，請手動選擇</div>`:'';
+    return `<div class="aim-row" style="background:#fff;border:1px solid #e8e8e8;border-radius:6px;padding:8px 10px;margin-bottom:6px;${rowDim}">
+      <div style="display:grid;grid-template-columns:24px 1fr 90px;gap:8px;align-items:center;margin-bottom:5px">
+        <input type="checkbox" ${checked?'checked':''} onchange="aimToggleRow(${i})" style="accent-color:#1e6038;width:14px;height:14px">
+        <input type="text" value="${escHtml(cs.title)}" oninput="_aimCases[${i}].title=this.value" placeholder="案件標題" style="background:#fafafa;border:1px solid #d8d8d8;border-radius:4px;padding:4px 8px;font-size:.78rem;font-weight:600;color:#1a1a1a;outline:none">
+        <input type="number" value="${cs.amount===''?'':cs.amount}" oninput="_aimCases[${i}].amount=this.value===''?'':parseInt(this.value)||0" placeholder="金額" style="background:#fafafa;border:1px solid #d8d8d8;border-radius:4px;padding:4px 8px;font-size:.72rem;text-align:right;font-family:'JetBrains Mono',monospace;color:#1e6038;outline:none">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 130px 130px;gap:6px;align-items:center">
+        <select onchange="_aimCases[${i}].clientId=this.value" class="form-select" style="font-size:.7rem;padding:3px 8px">
+          <option value="">— 選擇客戶 —</option>
+          ${clientList().map(c=>`<option value="${c.id}" ${c.id===cs.clientId?'selected':''}>${escHtml(c.name)}</option>`).join('')}
+        </select>
+        <select onchange="_aimCases[${i}].type=this.value" class="form-select" style="font-size:.7rem;padding:3px 8px">
+          ${typeOpts.map(t=>`<option value="${t}" ${t===cs.type?'selected':''}>${t}</option>`).join('')}
+        </select>
+        <input type="date" value="${escHtml(cs.dueDate)}" oninput="_aimCases[${i}].dueDate=this.value" style="background:#fafafa;border:1px solid #d8d8d8;border-radius:4px;padding:3px 8px;font-size:.7rem;color:#1a1a1a;font-family:inherit;outline:none">
+      </div>
+      ${warn}
+    </div>`;
+  }).join('');
+  const sel=_aimSelected.filter(Boolean).length;
+  const noClient=_aimCases.filter((c,i)=>_aimSelected[i]&&!c.clientId).length;
+  document.getElementById('aim-summary').innerHTML=`勾選 <b style="color:#1e6038">${sel}</b> / ${_aimCases.length}${noClient?` · <b style="color:#a86a00">⚠️ ${noClient} 個未對應客戶</b>`:''}`;
+}
+function aimToggleRow(i){_aimSelected[i]=!_aimSelected[i];renderAimList();}
+function aimToggleAll(){
+  const allChecked=_aimSelected.every(Boolean);
+  _aimSelected=_aimSelected.map(()=>!allChecked);
+  renderAimList();
+}
+function aimConfirm(){
+  const toCreate=_aimCases.filter((_,i)=>_aimSelected[i]);
+  if(!toCreate.length){toast('沒有勾選任何案件',true);return;}
+  const noClient=toCreate.filter(c=>!c.clientId);
+  if(noClient.length){
+    document.getElementById('aim-status').innerHTML=`<span style="color:#c53030">⚠️ ${noClient.length} 個案件未選擇客戶，無法建立。請為它們選好客戶或取消勾選。</span>`;
+    return;
+  }
+  const now=Date.now();
+  toCreate.forEach(o=>{
+    const c={
+      id:uid(),
+      clientId:o.clientId,
+      title:o.title||'',
+      type:o.type||'Podcast',
+      dueDate:o.dueDate||'',
+      laborOwner:'齊',
+      status:'todo',
+      materialNote:o.materialNote||'',
+      paymentNote:o.paymentNote||'',
+      notes:o.notes||'',
+      isOutsourced:false,
+      cost:0,
+      shareWithStudio:true,
+      pricing:{quotationItemId:o.quotationItemId||null,amount:o.amount===''?0:(parseInt(o.amount)||0),addons:[]},
+      linkedToCaseId:null,
+      invoiceId:null,
+      createdAt:now,
+      updatedAt:now,
+    };
+    saveCaseObj(c);
+  });
+  closeM('ai-multi-modal');
+  toast(`✅ 已建立 ${toCreate.length} 個案件`);
+}
+
 function fillCaseFormFromAi(p){
   if(p.clientId&&S.clients[p.clientId]){
     document.getElementById('f-client').value=p.clientId;
