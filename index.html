@@ -4286,13 +4286,22 @@ async function aiAnalyze(){
 - type 與 quotationItemId 要對應到該客戶的報價單；如果找到 quotationItemId 就把 amount 填成該項目價格
 - 不要額外文字，只回 JSON（單一物件或陣列）
 
-WalkIn Studio 領域慣例（很重要）：
-- 「Podcast + Video Podcast」這個組合表示**每一集都有兩個獨立案件**（純音 Podcast + 含影片 Video Podcast）。請拆成兩個案件
+客戶專屬慣例（只在對應到該客戶時套用，其他客戶請勿套用）：
+
+【嗨我是阿寬】專用：
+- 「Podcast + Video Podcast」表示**每一集都有兩個獨立案件**（純音 Podcast + 含影片 Video Podcast），請拆成兩個案件
 - 「共 N 集」+ 多個 type → 回傳 N × type 數量 個案件
-  例：「共 3 集 Podcast + Video Podcast」 → 回傳 6 個案件
-- 案件標題慣例：「EP[編號] [主題或來賓名]」。若使用者沒給編號，用 EP1, EP2, EP3...（之後使用者會在預覽視窗手動改）
-- 若同主題有多種 type，產出順序：先列同集的 Podcast 再 Video Podcast，再下一集
-- 純音檔 Podcast 通常比 Video Podcast 早 7 天交期（若使用者有給上架日，Podcast 填上架日 -7 天，Video Podcast 填上架日）`;
+  例：嗨我是阿寬的「共 3 集 Podcast + Video Podcast」→ 回傳 6 個案件
+- 純音 Podcast 比 Video Podcast 早 7 天交期（若給上架日，Podcast 填上架日 -7 天，Video Podcast 填上架日）
+- 標題格式：「EP[編號] [主題或來賓名]」，編號若未明說用 EP1, EP2, EP3...（使用者會在預覽視窗手動改）
+
+【其他客戶】預設行為：
+- 不要自動拆 type；使用者要幾個案件就回幾個
+- 不要自動偏移交期；使用者給什麼日期就填什麼
+- 標題保留使用者原本的描述
+
+通則：
+- 若無法判斷客戶 → 採「其他客戶」預設行為，不要套阿寬的規則`;
   try{
     const resp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
