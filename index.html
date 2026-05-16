@@ -577,6 +577,7 @@ select.form-select:focus{border-color:#666666}
       <div class="sb-group">
         <div class="sb-group-title">客戶與報價</div>
         <div class="sb-item" data-tab="clients"><span class="ico">👥</span>客戶</div>
+        <div class="sb-item" data-tab="outsourcers"><span class="ico">🤝</span>外包</div>
         <div class="sb-item" data-tab="quotations"><span class="ico">💰</span><span style="flex:1">報價單</span><span class="chev">▶</span></div>
         <div class="sb-sub" id="sb-sub-quotations"></div>
       </div>
@@ -660,6 +661,21 @@ select.form-select:focus{border-color:#666666}
       <div class="empty-icon">👥</div>
       <div class="empty-title">尚無客戶</div>
       <div style="font-size:.8rem">建立客戶資料後，新增案件可從下拉選單帶入</div>
+    </div>
+  </div>
+</div>
+
+<!-- TAB: OUTSOURCERS -->
+<div class="tab-panel" id="tab-outsourcers">
+  <div class="filter-bar">
+    <span class="filter-label">共 <span id="outsourcers-count">0</span> 個外包人員</span>
+  </div>
+  <div class="scroll-body">
+    <div class="client-grid" id="outsourcers-grid"></div>
+    <div id="outsourcers-empty" class="empty-state" style="display:none">
+      <div class="empty-icon">🤝</div>
+      <div class="empty-title">尚無外包人員</div>
+      <div style="font-size:.8rem">建立後可在「外包此案」勾選時帶入該人員的報價</div>
     </div>
   </div>
 </div>
@@ -787,6 +803,8 @@ select.form-select:focus{border-color:#666666}
       <div class="empty-title">尚無金流資料</div>
       <div style="font-size:.8rem">先寄出 Invoice 才會出現在此</div>
     </div>
+    <!-- 外包應付款 -->
+    <div id="cash-outsource-section"></div>
   </div>
 </div>
 
@@ -816,6 +834,91 @@ select.form-select:focus{border-color:#666666}
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeM('bulk-import-modal')">取消</button>
       <button class="btn-primary" id="bi-submit" onclick="confirmBulkImport()">建立全部</button>
+    </div>
+  </div>
+</div>
+
+<!-- OUTSOURCER MODAL -->
+<div class="modal-overlay" id="outsourcer-modal">
+  <div class="modal modal-lg">
+    <div class="modal-title">🤝 <span id="outsourcer-modal-title">新增外包人員</span></div>
+
+    <div class="cl-section">
+      <div class="cl-section-title">基本資料</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">名稱 *</label>
+          <input class="form-input" id="os-name" placeholder="例：Rachel">
+        </div>
+        <div class="form-group">
+          <label class="form-label">聯絡方式</label>
+          <input class="form-input" id="os-contact" placeholder="電話 / Email / Line ID">
+        </div>
+      </div>
+    </div>
+
+    <div class="cl-section">
+      <div class="cl-section-title">付款資訊</div>
+      <div class="form-row-3">
+        <div class="form-group">
+          <label class="form-label">銀行</label>
+          <input class="form-input" id="os-bank" placeholder="例：013 國泰世華">
+        </div>
+        <div class="form-group">
+          <label class="form-label">帳號</label>
+          <input class="form-input" id="os-bank-account" placeholder="例：699521352187">
+        </div>
+        <div class="form-group">
+          <label class="form-label">戶名</label>
+          <input class="form-input" id="os-bank-account-name" placeholder="(選填)">
+        </div>
+      </div>
+    </div>
+
+    <div class="cl-section">
+      <div class="cl-section-title">報價表（時長費率）</div>
+      <div id="os-tiers-list" style="display:flex;flex-direction:column;gap:5px"></div>
+      <button class="add-btn" onclick="addOsTierRow()" style="margin-top:6px">＋ 新增費率</button>
+      <div class="form-row" style="margin-top:8px">
+        <div class="form-group">
+          <label class="form-label">急件天數門檻（N 天內 = 急件）</label>
+          <input class="form-input" id="os-rush-days" type="number" min="1" placeholder="3" value="3">
+        </div>
+        <div class="form-group">
+          <label class="form-label">急件加價（元）</label>
+          <input class="form-input" id="os-rush-fee" type="number" placeholder="0" value="0">
+        </div>
+      </div>
+    </div>
+
+    <div class="cl-section">
+      <div class="cl-section-title">檔案 / 工作流規則（選填）</div>
+      <div class="form-group full">
+        <label class="form-label">雲端資料夾 URL</label>
+        <input class="form-input" id="os-cloud-url" placeholder="https://drive.google.com/drive/folders/...">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">待剪輯檔名範本</label>
+          <input class="form-input" id="os-naming-todo" placeholder="例：{date}_{ep}_to edit">
+        </div>
+        <div class="form-group">
+          <label class="form-label">完成檔名範本</label>
+          <input class="form-input" id="os-naming-done" placeholder="例：{date}_{ep}_rachel edit">
+        </div>
+      </div>
+      <div style="font-size:.6rem;color:#666;margin-top:3px;line-height:1.5">支援變數：<code>{date}</code> 今日日期、<code>{ep}</code> 案件代號 / 標題</div>
+    </div>
+
+    <div class="cl-section">
+      <div class="cl-section-title">備註</div>
+      <textarea class="form-textarea" id="os-notes" rows="2" placeholder="其他工作流程說明 / 注意事項"></textarea>
+    </div>
+
+    <div class="modal-btns">
+      <button class="btn-danger" id="os-del-btn" onclick="confirmDelOutsourcer()" style="display:none">刪除</button>
+      <button class="btn-cancel" onclick="closeM('outsourcer-modal')">取消</button>
+      <button class="btn-primary" onclick="saveOutsourcer()">儲存</button>
     </div>
   </div>
 </div>
@@ -993,13 +1096,44 @@ select.form-select:focus{border-color:#666666}
     <div class="form-row">
       <div class="form-group">
         <label class="form-label" style="display:flex;align-items:center;gap:6px">
-          <input type="checkbox" id="f-outsourced" style="accent-color:#1e6038"> 外包此案
+          <input type="checkbox" id="f-outsourced" onchange="onFOutsourcedChange()" style="accent-color:#1e6038"> 外包此案
         </label>
       </div>
       <div class="form-group">
         <label class="form-label">支出（元，外包/錄音室成本）</label>
         <input class="form-input" id="f-cost" type="number" placeholder="0" inputmode="numeric">
       </div>
+    </div>
+
+    <!-- 外包人員設定 — 勾「外包此案」時顯示 -->
+    <div class="form-group full" id="f-outsource-section" style="display:none;background:#f0f8f2;border:1px solid #b8e0c4;border-radius:8px;padding:10px 12px">
+      <label class="form-label" style="color:#1e6038;margin-bottom:6px">🤝 外包人員設定</label>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">外包人員</label>
+          <input type="hidden" id="f-outsourcer-id" value="">
+          <div class="qi-master-picker">
+            <button type="button" class="qi-master-trigger" id="f-outsourcer-trigger"><span class="qi-master-trigger-text">— 選擇外包人員 —</span><span class="qi-master-trigger-arrow">▼</span></button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">計費等級</label>
+          <input type="hidden" id="f-outsource-tier" value="">
+          <div class="qi-master-picker">
+            <button type="button" class="qi-master-trigger" id="f-outsource-tier-trigger"><span class="qi-master-trigger-text">— 先選人員 —</span><span class="qi-master-trigger-arrow">▼</span></button>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:14px;align-items:center;margin-top:6px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.78rem">
+          <input type="checkbox" id="f-outsource-rush" onchange="updateFOutsourceCost()" style="accent-color:#a86a00">
+          <span>急件（自動加價）</span>
+        </label>
+        <span class="spacer" style="flex:1"></span>
+        <span style="font-size:.7rem;color:#666">支出自動算 = </span>
+        <span id="f-outsource-cost-display" style="font-family:'JetBrains Mono',monospace;color:#1e6038;font-weight:700;font-size:.85rem">$0</span>
+      </div>
+      <div id="f-outsource-filename-preview" style="display:none;margin-top:8px;padding:6px 10px;background:#fafafa;border:1px dashed #d8d8d8;border-radius:6px;font-size:.66rem;color:#666;font-family:'JetBrains Mono',monospace"></div>
     </div>
 
     <!-- 分潤設定 — 是否與工作室分潤 -->
@@ -1496,6 +1630,7 @@ const S={
   cases:{},            // {id: {id,clientId,title,type,dueDate,...,status}}
   workItems:{},        // {id: {id,label,category,defaultPrice}} — master library
   invoices:{},         // {id: {id,invoiceNumber,clientId,billingMonth,items,status,...}}
+  outsourcers:{},      // {id: {id,name,bank,bankAccount,pricingTiers:[{label,amount}],rushDays,rushFee,...}}
   invoiceFilter:{month:'all',client:'all',status:'all'},
   invoiceViewMode:'list',  // 'list' | 'editor'
   selectedInvoiceId:null,
@@ -1555,6 +1690,10 @@ function initFirebase(){
   });
   _db.ref(`${ROOT}/invoices`).on('value',snap=>{
     S.invoices=snap.val()||{};
+    renderCurrentTab();
+  });
+  _db.ref(`${ROOT}/outsourcers`).on('value',snap=>{
+    S.outsourcers=snap.val()||{};
     renderCurrentTab();
   });
   _db.ref(`${ROOT}/settings`).on('value',snap=>{
@@ -1619,6 +1758,23 @@ function deleteInvoiceObj(id){
   _db.ref(`${ROOT}/invoices/${id}`).remove();
 }
 function invoiceList(){return Object.values(S.invoices||{}).sort((a,b)=>(b.issuedAt||0)-(a.issuedAt||0));}
+function saveOutsourcerObj(o){if(!_fbReady)return;_db.ref(`${ROOT}/outsourcers/${o.id}`).set(JSON.parse(JSON.stringify(o)));}
+function deleteOutsourcerObj(id){_db.ref(`${ROOT}/outsourcers/${id}`).remove();}
+function outsourcerList(){return Object.values(S.outsourcers||{}).sort((a,b)=>(a.name||'').localeCompare(b.name||'','zh-TW'));}
+function ensureOutsourcer(o){
+  if(!o.pricingTiers)o.pricingTiers=[];
+  if(o.rushDays==null)o.rushDays=3;
+  if(o.rushFee==null)o.rushFee=0;
+}
+function computeOutsourceCost(cs){
+  if(!cs.isOutsourced||!cs.outsource)return cs.cost||0;
+  const o=S.outsourcers[cs.outsource.outsourcerId];
+  if(!o)return cs.cost||0;
+  const tier=o.pricingTiers?.find(t=>t.label===cs.outsource.tierLabel);
+  if(!tier)return cs.cost||0;
+  const rush=cs.outsource.isRush?(o.rushFee||0):0;
+  return (tier.amount||0)+rush;
+}
 // Generate next invoice number for {prefix}-{YYYYMM} (auto serial -2, -3 if duplicates exist)
 function nextInvoiceNumber(prefix,billingMonth){
   const base=`${(prefix||'INV').toUpperCase()}-${billingMonth.replace('-','')}`;
@@ -1683,6 +1839,7 @@ const TAB_META={
   cases:{ico:'📋',label:'案件',addBtn:{txt:'＋ 新增案件',fn:'openAddCase'}},
   workitems:{ico:'🛠️',label:'工作項目庫',addBtn:{txt:'＋ 新增工作項目',fn:'openAddWorkItem'}},
   clients:{ico:'👥',label:'客戶',addBtn:{txt:'＋ 新增客戶',fn:'openAddClient'}},
+  outsourcers:{ico:'🤝',label:'外包人員',addBtn:{txt:'＋ 新增外包人員',fn:'openAddOutsourcer'}},
   quotations:{ico:'💰',label:'報價單',addBtn:null},
   invoices:{ico:'🧾',label:'Invoice',addBtn:null},
   cashflow:{ico:'💵',label:'金流',addBtn:null},
@@ -1731,6 +1888,7 @@ function renderCurrentTab(){
   else if(n==='quotations')renderQuotations();
   else if(n==='invoices')renderInvoices();
   else if(n==='cashflow')renderCashflow();
+  else if(n==='outsourcers')renderOutsourcers();
 }
 document.querySelectorAll('.sb-item[data-tab]').forEach(t=>t.addEventListener('click',()=>switchTab(t.dataset.tab)));
 
@@ -1914,6 +2072,10 @@ function openAddCase(){
   document.getElementById('f-notes').value='';
   document.getElementById('f-outsourced').checked=false;
   document.getElementById('f-cost').value='';
+  document.getElementById('f-outsourcer-id').value='';
+  document.getElementById('f-outsource-tier').value='';
+  document.getElementById('f-outsource-rush').checked=false;
+  onFOutsourcedChange();
   document.getElementById('f-share-studio').checked=true;  // default share with studio
   // billing-link defaults: independent
   document.getElementById('f-billing-independent').checked=true;
@@ -1969,6 +2131,11 @@ function openEditCase(id){
   document.getElementById('f-notes').value=c.notes||'';
   document.getElementById('f-outsourced').checked=!!c.isOutsourced;
   document.getElementById('f-cost').value=c.cost||'';
+  // restore outsource detail (outsourcerId / tier / rush)
+  document.getElementById('f-outsourcer-id').value=c.outsource?.outsourcerId||'';
+  document.getElementById('f-outsource-tier').value=c.outsource?.tierLabel||'';
+  document.getElementById('f-outsource-rush').checked=!!c.outsource?.isRush;
+  onFOutsourcedChange();
   // shareWithStudio default true (legacy cases without the field share by default)
   document.getElementById('f-share-studio').checked=c.shareWithStudio!==false;
   // billing-link state
@@ -2324,6 +2491,58 @@ function recomputeFAmount(){
   }
 }
 function onFAmountManualEdit(){_fAmountManuallyEdited=true;}
+
+// ── 案件 modal 外包設定 ──
+function onFOutsourcedChange(){
+  const checked=document.getElementById('f-outsourced').checked;
+  const sec=document.getElementById('f-outsource-section');
+  if(sec)sec.style.display=checked?'block':'none';
+  if(checked){
+    buildFlatPicker('f-outsourcer-id','f-outsourcer-trigger',
+      ()=>[{v:'',label:'— 選擇外包人員 —'},...outsourcerList().map(o=>({v:o.id,label:o.name}))],
+      ()=>{onFOutsourcerChange();},
+      '— 選擇外包人員 —');
+    buildFOutsourceTierPicker();
+    updateFOutsourceCost();
+  }
+}
+function onFOutsourcerChange(){
+  document.getElementById('f-outsource-tier').value='';
+  buildFOutsourceTierPicker();
+  updateFOutsourceCost();
+}
+function buildFOutsourceTierPicker(){
+  const oid=document.getElementById('f-outsourcer-id').value;
+  const o=oid?S.outsourcers[oid]:null;
+  const tiers=o?.pricingTiers||[];
+  buildFlatPicker('f-outsource-tier','f-outsource-tier-trigger',
+    ()=>[{v:'',label:o?'— 選擇等級 —':'— 先選人員 —'},...tiers.map(t=>({v:t.label,label:`${t.label} — $${fmtMoney(t.amount)}`}))],
+    ()=>{updateFOutsourceCost();},
+    o?'— 選擇等級 —':'— 先選人員 —');
+}
+function updateFOutsourceCost(){
+  const oid=document.getElementById('f-outsourcer-id').value;
+  const o=oid?S.outsourcers[oid]:null;
+  if(!o){document.getElementById('f-outsource-cost-display').textContent='$0';return;}
+  const tierLabel=document.getElementById('f-outsource-tier').value;
+  const tier=o.pricingTiers?.find(t=>t.label===tierLabel);
+  const isRush=document.getElementById('f-outsource-rush').checked;
+  const base=tier?(tier.amount||0):0;
+  const rush=isRush?(o.rushFee||0):0;
+  const total=base+rush;
+  document.getElementById('f-outsource-cost-display').textContent='$'+fmtMoney(total);
+  document.getElementById('f-cost').value=total;
+  const fp=document.getElementById('f-outsource-filename-preview');
+  if(o&&(o.fileToEditPattern||o.fileDonePattern)&&fp){
+    const today=new Date().toISOString().slice(0,10);
+    const title=document.getElementById('f-title').value.trim()||'XXXXX';
+    const replace=(s)=>(s||'').replace(/\{date\}/g,today).replace(/\{ep\}/g,title);
+    fp.style.display='block';
+    fp.innerHTML=`📁 待剪輯：<b style="color:#1a1a1a">${escHtml(replace(o.fileToEditPattern)||'(未設定)')}</b><br>📁 完成：<b style="color:#1a1a1a">${escHtml(replace(o.fileDonePattern)||'(未設定)')}</b>${o.cloudFolderUrl?`<br>🔗 <a href="${escHtml(o.cloudFolderUrl)}" target="_blank" style="color:#1e6038;text-decoration:none">雲端資料夾 →</a>`:''}`;
+  }else if(fp){
+    fp.style.display='none';
+  }
+}
 function refreshLinkedToOptions(){
   // The link picker is custom — just refresh its label based on current hidden value
   const cur=document.getElementById('f-linked-to')?.value||'';
@@ -2401,6 +2620,12 @@ function saveCase(){
     notes:document.getElementById('f-notes').value.trim(),
     isOutsourced:document.getElementById('f-outsourced').checked,
     cost:parseInt(document.getElementById('f-cost').value)||0,
+    outsource:document.getElementById('f-outsourced').checked?{
+      outsourcerId:document.getElementById('f-outsourcer-id').value||null,
+      tierLabel:document.getElementById('f-outsource-tier').value||null,
+      isRush:document.getElementById('f-outsource-rush').checked,
+      paidAt:S.editCaseId?(S.cases[S.editCaseId]?.outsource?.paidAt??null):null,
+    }:null,
     shareWithStudio:document.getElementById('f-share-studio').checked,
     pricing:{quotationItemId,amount:billingLinked?0:amount,addons:billingLinked?[]:_fAddons.filter(a=>a.qty>0).map(a=>({addonId:a.addonId,label:a.label,amount:a.amount,qty:a.qty}))},
     linkedToCaseId,
@@ -2446,6 +2671,113 @@ function renderClients(){
   }).join('');
 }
 function goToQuote(cid){S.selectedClientForQuote=cid;switchTab('quotations');}
+
+// ── OUTSOURCERS ─────────────────────────────────────
+let _osTiers=[];
+function renderOutsourcers(){
+  const list=outsourcerList();
+  document.getElementById('outsourcers-count').textContent=list.length;
+  const grid=document.getElementById('outsourcers-grid');
+  const empty=document.getElementById('outsourcers-empty');
+  if(!list.length){grid.innerHTML='';empty.style.display='flex';return;}
+  empty.style.display='none';
+  grid.innerHTML=list.map(o=>{
+    const tiersBrief=(o.pricingTiers||[]).slice(0,3).map(t=>`${escHtml(t.label)} $${fmtMoney(t.amount)}`).join(' · ');
+    const bankLast4=o.bankAccount?String(o.bankAccount).slice(-4):'';
+    const useCount=Object.values(S.cases||{}).filter(c=>c.isOutsourced&&c.outsource?.outsourcerId===o.id).length;
+    return `<div class="client-card" onclick="openEditOutsourcer('${o.id}')">
+      <div class="client-card-name">${escHtml(o.name)}</div>
+      <div class="client-card-row"><b>聯絡</b>${escHtml(o.contactInfo||'—')}</div>
+      <div class="client-card-row"><b>銀行</b>${escHtml(o.bank||'—')}${bankLast4?` 末4: ${bankLast4}`:''}</div>
+      <div class="client-card-row"><b>費率</b><span style="font-size:.66rem;color:#666">${tiersBrief||'未設定'}</span></div>
+      ${o.rushFee?`<div class="client-card-row"><b>急件</b><span style="color:#a86a00;font-size:.66rem">${o.rushDays} 天內 +$${fmtMoney(o.rushFee)}</span></div>`:''}
+      <div class="client-card-actions" onclick="event.stopPropagation()">
+        <span class="muted" style="font-size:.7rem;margin-left:auto;align-self:center">${useCount} 案件使用</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openAddOutsourcer(){
+  S.editOutsourcerId=null;
+  document.getElementById('outsourcer-modal-title').textContent='新增外包人員';
+  document.getElementById('os-del-btn').style.display='none';
+  ['os-name','os-contact','os-bank','os-bank-account','os-bank-account-name','os-cloud-url','os-naming-todo','os-naming-done','os-notes'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  document.getElementById('os-rush-days').value=3;
+  document.getElementById('os-rush-fee').value=0;
+  _osTiers=[{label:'',amount:0}];
+  renderOsTiers();
+  openM('outsourcer-modal');
+}
+function openEditOutsourcer(id){
+  const o=S.outsourcers[id];if(!o)return;
+  ensureOutsourcer(o);
+  S.editOutsourcerId=id;
+  document.getElementById('outsourcer-modal-title').textContent='編輯外包人員';
+  document.getElementById('os-del-btn').style.display='block';
+  document.getElementById('os-name').value=o.name||'';
+  document.getElementById('os-contact').value=o.contactInfo||'';
+  document.getElementById('os-bank').value=o.bank||'';
+  document.getElementById('os-bank-account').value=o.bankAccount||'';
+  document.getElementById('os-bank-account-name').value=o.bankAccountName||'';
+  document.getElementById('os-cloud-url').value=o.cloudFolderUrl||'';
+  document.getElementById('os-naming-todo').value=o.fileToEditPattern||'';
+  document.getElementById('os-naming-done').value=o.fileDonePattern||'';
+  document.getElementById('os-notes').value=o.notes||'';
+  document.getElementById('os-rush-days').value=o.rushDays??3;
+  document.getElementById('os-rush-fee').value=o.rushFee??0;
+  _osTiers=(o.pricingTiers||[]).map(t=>({label:t.label||'',amount:t.amount||0}));
+  if(!_osTiers.length)_osTiers.push({label:'',amount:0});
+  renderOsTiers();
+  openM('outsourcer-modal');
+}
+function renderOsTiers(){
+  const el=document.getElementById('os-tiers-list');
+  if(!el)return;
+  el.innerHTML=_osTiers.map((t,i)=>`<div style="display:grid;grid-template-columns:1fr 120px 24px;gap:6px;align-items:center">
+    <input type="text" placeholder="例：60min" value="${escHtml(t.label)}" oninput="_osTiers[${i}].label=this.value" style="background:#fafafa;border:1px solid #d8d8d8;border-radius:4px;padding:4px 8px;font-size:.74rem;color:#1a1a1a;outline:none;font-family:inherit">
+    <input type="number" placeholder="金額" value="${t.amount||0}" oninput="_osTiers[${i}].amount=parseInt(this.value)||0" style="background:#fafafa;border:1px solid #d8d8d8;border-radius:4px;padding:4px 8px;font-size:.74rem;color:#1e6038;text-align:right;font-family:'JetBrains Mono',monospace;outline:none">
+    <button class="act-btn del" onclick="removeOsTier(${i})" title="移除">✕</button>
+  </div>`).join('');
+}
+function addOsTierRow(){_osTiers.push({label:'',amount:0});renderOsTiers();}
+function removeOsTier(i){_osTiers.splice(i,1);if(!_osTiers.length)_osTiers.push({label:'',amount:0});renderOsTiers();}
+
+function saveOutsourcer(){
+  const name=document.getElementById('os-name').value.trim();
+  if(!name){toast('請填寫名稱',true);return;}
+  const tiers=_osTiers.filter(t=>t.label.trim()).map(t=>({label:t.label.trim(),amount:parseInt(t.amount)||0}));
+  const o={
+    id:S.editOutsourcerId||uid(),
+    name,
+    contactInfo:document.getElementById('os-contact').value.trim(),
+    bank:document.getElementById('os-bank').value.trim(),
+    bankAccount:document.getElementById('os-bank-account').value.trim(),
+    bankAccountName:document.getElementById('os-bank-account-name').value.trim(),
+    cloudFolderUrl:document.getElementById('os-cloud-url').value.trim(),
+    fileToEditPattern:document.getElementById('os-naming-todo').value.trim(),
+    fileDonePattern:document.getElementById('os-naming-done').value.trim(),
+    pricingTiers:tiers,
+    rushDays:parseInt(document.getElementById('os-rush-days').value)||3,
+    rushFee:parseInt(document.getElementById('os-rush-fee').value)||0,
+    notes:document.getElementById('os-notes').value.trim(),
+    createdAt:S.editOutsourcerId?S.outsourcers[S.editOutsourcerId]?.createdAt:Date.now(),
+    updatedAt:Date.now(),
+  };
+  saveOutsourcerObj(o);
+  closeM('outsourcer-modal');
+  toast(S.editOutsourcerId?'已更新外包人員':'已新增外包人員');
+}
+function confirmDelOutsourcer(){
+  const id=S.editOutsourcerId;
+  if(!id)return;
+  const o=S.outsourcers[id];
+  const useCount=Object.values(S.cases||{}).filter(c=>c.isOutsourced&&c.outsource?.outsourcerId===id).length;
+  closeM('outsourcer-modal');
+  showConf('刪除外包人員？',`「${o?.name||''}」將永久刪除${useCount?`（有 ${useCount} 個案件正在使用，會失去關聯但不影響案件本身）`:''}。`,()=>{
+    deleteOutsourcerObj(id);toast('已刪除');
+  });
+}
 function openAddClient(){
   S.editClientId=null;
   document.getElementById('client-modal-title').textContent='新增客戶';
@@ -5415,7 +5747,7 @@ function computeInvoiceSplit(inv){
   const lines=items.map(it=>{
     const sub=(it.defaultPrice||0)*(it.qty==null?1:it.qty);
     const cs=it.sourceCaseId?S.cases[it.sourceCaseId]:null;
-    const cost=cs?(cs.cost||0):0;
+    const cost=cs?(cs.isOutsourced?computeOutsourceCost(cs):(cs.cost||0)):0;
     const labor=cs?(cs.laborOwner||'齊'):'?';
     // shareWithStudio: default true if undefined, only false when explicitly opted out
     const shareStudio=cs?(cs.shareWithStudio!==false):true;
@@ -5504,6 +5836,8 @@ function renderCashflow(){
       <div class="sub">已從淨額扣除</div>
     </div>`:''}
   `;
+  // Render 應付外包款 section (independent of invoice status)
+  renderOutsourcePayables();
   // Render invoice rows
   if(!invs.length){list.innerHTML='';empty.style.display='flex';return;}
   empty.style.display='none';
@@ -5569,6 +5903,82 @@ function toggleCashRow(id){
   else S.cashFilter.expandedIds.add(id);
   renderCashflow();
 }
+// ── 應付外包款 by outsourcer ──
+function renderOutsourcePayables(){
+  const el=document.getElementById('cash-outsource-section');
+  if(!el)return;
+  const monthSel=document.getElementById('cash-filter-month')?.value||'all';
+  const allCases=Object.values(S.cases||{}).filter(cs=>cs.isOutsourced&&cs.outsource?.outsourcerId);
+  const cases=monthSel==='all'?allCases:allCases.filter(cs=>cs.dueDate&&cs.dueDate.startsWith(monthSel));
+  if(!cases.length){el.innerHTML='';return;}
+  const byOs=new Map();
+  cases.forEach(cs=>{
+    const oid=cs.outsource.outsourcerId;
+    const arr=byOs.get(oid)||[];
+    arr.push(cs);
+    byOs.set(oid,arr);
+  });
+  let totalAll=0,paidAll=0,pendAll=0;
+  const groupsHtml=[...byOs.entries()].map(([oid,csArr])=>{
+    const o=S.outsourcers[oid];
+    const oname=o?o.name:'(已刪除)';
+    let totalGroup=0,paidGroup=0;
+    const rowsHtml=csArr.sort((a,b)=>(b.dueDate||'').localeCompare(a.dueDate||'')).map(cs=>{
+      const cost=computeOutsourceCost(cs);
+      const isPaid=!!cs.outsource?.paidAt;
+      totalGroup+=cost;
+      if(isPaid)paidGroup+=cost;
+      const tier=cs.outsource?.tierLabel||'';
+      const rush=cs.outsource?.isRush?' <span style="color:#a86a00;font-size:.6rem">急件</span>':'';
+      const client=S.clients[cs.clientId];
+      return `<div class="cash-line" style="grid-template-columns:1fr 90px 80px 100px 90px;cursor:pointer" onclick="openEditCase('${cs.id}')">
+        <div class="lab">${escHtml(cs.title||'(無標題)')}<div class="who">${escHtml(client?.name||'?')} · ${escHtml(tier)}${rush}</div></div>
+        <div class="num" style="font-size:.66rem;color:#888">${cs.dueDate||'—'}</div>
+        <div class="num">$${fmtMoney(cost)}</div>
+        <div onclick="event.stopPropagation()">
+          <div class="cash-status-toggle">
+            <button class="${!isPaid?'active sent':''}" onclick="setOutsourcePaid('${cs.id}',false)">未付</button>
+            <button class="${isPaid?'active paid':''}" onclick="setOutsourcePaid('${cs.id}',true)">已付</button>
+          </div>
+        </div>
+        <div class="num" style="color:${isPaid?'#1e6038':'#c53030'};font-weight:700">${isPaid?'$'+fmtMoney(cost):'$'+fmtMoney(cost)}</div>
+      </div>`;
+    }).join('');
+    const pendGroup=totalGroup-paidGroup;
+    totalAll+=totalGroup;paidAll+=paidGroup;pendAll+=pendGroup;
+    const bankInfo=o?`${o.bank||'(銀行未設)'} ${o.bankAccount||''}`:'';
+    return `<div class="cash-row" style="margin-bottom:8px">
+      <div class="cash-row-head" style="cursor:default">
+        <div class="ino" style="grid-column:1/3">🤝 ${escHtml(oname)}<div style="font-size:.62rem;color:#888;font-family:'JetBrains Mono',monospace;margin-top:2px">${escHtml(bankInfo)}</div></div>
+        <div class="mon">${csArr.length} 案</div>
+        <div></div>
+        <div class="amt"><span style="color:#888;font-size:.6rem">應付</span> $${fmtMoney(totalGroup)}<div style="font-size:.6rem;color:${pendGroup?'#c53030':'#1e6038'};margin-top:2px">${pendGroup?`待付 $${fmtMoney(pendGroup)}`:'✅ 全部已付'}</div></div>
+        <div></div>
+      </div>
+      <div class="cash-row-detail" style="display:block">
+        <div class="cash-line cash-line-hdr" style="grid-template-columns:1fr 90px 80px 100px 90px">
+          <div>案件</div><div style="text-align:right">交期</div><div style="text-align:right">金額</div><div style="text-align:center">付款狀態</div><div style="text-align:right">小計</div>
+        </div>
+        ${rowsHtml}
+      </div>
+    </div>`;
+  }).join('');
+  el.innerHTML=`<div style="margin-top:24px;padding:14px 14px 0;border-top:2px solid #d8d8d8">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px">
+      <h3 style="margin:0;font-size:.95rem;color:#1a1a1a">📤 應付外包款</h3>
+      <span style="font-size:.7rem;color:#888">合計 <b style="color:#1a1a1a">$${fmtMoney(totalAll)}</b> · 待付 <b style="color:#c53030">$${fmtMoney(pendAll)}</b> · 已付 <b style="color:#1e6038">$${fmtMoney(paidAll)}</b></span>
+    </div>
+    <div class="cash-list" style="padding:0">${groupsHtml}</div>
+  </div>`;
+}
+function setOutsourcePaid(caseId,paid){
+  const cs=S.cases[caseId];if(!cs||!cs.outsource)return;
+  cs.outsource.paidAt=paid?Date.now():null;
+  cs.updatedAt=Date.now();
+  saveCaseObj(cs);
+  toast(paid?'已標記為已付':'已改回未付');
+}
+
 function setInvoicePaymentStatus(id,status){
   const inv=S.invoices[id];if(!inv)return;
   if(!['sent','paid'].includes(status))return;
