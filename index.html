@@ -1946,8 +1946,8 @@ function renderCases(){
     const status=c.status||'todo';
     const dn=dUntil(c.dueDate);
     let dateCls='';
-    if(dn!==null&&dn<=3&&status!=='done')dateCls='date-soon';
-    else if(dn!==null&&dn<=7&&status!=='done')dateCls='date-warn';
+    if(dn!==null&&dn<0&&status!=='done')dateCls='date-soon';        // 已過期 → 淡紅
+    else if(dn!==null&&dn<=7&&status!=='done')dateCls='date-warn';  // 7 天內到期 → 淡橘
     const amount=c.pricing?.amount;
     let amtStr;
     if(c.linkedToCaseId){
