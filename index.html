@@ -100,6 +100,11 @@ body{display:flex;flex-direction:column}
 /* GENERIC TABLE */
 .tbl{width:100%;border-collapse:collapse;min-width:900px}
 .tbl thead th{background:#ffffff;padding:7px 10px;font-size:.67rem;color:#666666;font-weight:700;text-align:left;border-bottom:1px solid #d8d8d8;position:sticky;top:0;z-index:10;white-space:nowrap;text-transform:uppercase;letter-spacing:.4px}
+.tbl thead th.cf-sortable{cursor:pointer;user-select:none;transition:color .1s}
+.tbl thead th.cf-sortable:hover{color:#1a1a1a}
+.tbl thead th.cf-sortable.active{color:#1e6038}
+.cf-sort-arrow{display:inline-block;width:10px;font-size:.8em;margin-left:3px;color:#aaa}
+.tbl thead th.cf-sortable.active .cf-sort-arrow{color:#1e6038}
 .tbl tbody tr{border-bottom:1px solid #ffffff;transition:background .1s;cursor:pointer}
 .tbl tbody tr:nth-child(even){background:#f0f0f0}
 .tbl tbody tr:nth-child(odd){background:#f5f5f5}
@@ -629,9 +634,9 @@ select.form-select:focus{border-color:#666666}
     <table class="tbl" id="cases-table">
       <thead><tr>
         <th style="width:140px">客戶/節目</th>
-        <th>標題</th>
+        <th class="cf-sortable" data-cf-sort="title" onclick="toggleCfSort('title')">標題<span class="cf-sort-arrow" id="cf-sort-arrow-title"></span></th>
         <th style="width:115px">類型</th>
-        <th style="width:100px">交期</th>
+        <th class="cf-sortable" style="width:100px" data-cf-sort="dueDate" onclick="toggleCfSort('dueDate')">交期<span class="cf-sort-arrow" id="cf-sort-arrow-dueDate"></span></th>
         <th style="width:100px">收款</th>
         <th>素材</th>
         <th>備註</th>
@@ -1646,7 +1651,7 @@ const S={
   invoiceFilter:{month:'all',client:'all',status:'all'},
   invoiceViewMode:'list',  // 'list' | 'editor'
   selectedInvoiceId:null,
-  cf:{status:'active',client:'all',month:'all',search:''},
+  cf:{status:'active',client:'all',month:'all',search:'',sortBy:'dueDate',sortDir:'asc'},
   wiSearch:'',
   wiSelectedCategory:'all',          // 'all' | category name
   wiRenamingCategory:null,           // category being inline-renamed
@@ -1944,14 +1949,42 @@ function filteredCases(){
   const mo=document.getElementById('cf-month').value;
   if(mo&&mo!=='all')arr=arr.filter(c=>c.dueDate&&c.dueDate.startsWith(mo));
   if(S.cf.search)arr=arr.filter(c=>(c.title||'').toLowerCase().includes(S.cf.search));
-  arr.sort((a,b)=>(a.dueDate||'9999').localeCompare(b.dueDate||'9999'));
+  // Sort by current cf.sortBy + sortDir
+  const dir=S.cf.sortDir==='desc'?-1:1;
+  const by=S.cf.sortBy||'dueDate';
+  arr.sort((a,b)=>{
+    if(by==='title')return (a.title||'').localeCompare(b.title||'','zh-TW',{numeric:true})*dir;
+    // default: dueDate
+    return (a.dueDate||'9999').localeCompare(b.dueDate||'9999')*dir;
+  });
   return arr;
+}
+function toggleCfSort(field){
+  if(S.cf.sortBy===field){
+    S.cf.sortDir=S.cf.sortDir==='asc'?'desc':'asc';
+  }else{
+    S.cf.sortBy=field;
+    S.cf.sortDir='asc';
+  }
+  renderCases();
 }
 function renderCases(){
   const arr=filteredCases();
   const tb=document.getElementById('cases-tbody');
   const empty=document.getElementById('cases-empty');
   document.getElementById('cases-count').textContent=`${arr.length} 筆`;
+  // Update sort arrows on header
+  document.querySelectorAll('.tbl thead th.cf-sortable').forEach(th=>{
+    const field=th.dataset.cfSort;
+    const arrow=document.getElementById('cf-sort-arrow-'+field);
+    if(field===S.cf.sortBy){
+      th.classList.add('active');
+      if(arrow)arrow.textContent=S.cf.sortDir==='desc'?'▼':'▲';
+    }else{
+      th.classList.remove('active');
+      if(arrow)arrow.textContent='';
+    }
+  });
   if(!arr.length){tb.innerHTML='';empty.style.display='flex';return;}
   empty.style.display='none';
   tb.innerHTML=arr.map(c=>{
