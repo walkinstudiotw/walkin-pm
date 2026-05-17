@@ -4598,6 +4598,39 @@ function renderAiImageThumbs(){
 function removeAiImage(idx){_aiImages.splice(idx,1);renderAiImageThumbs();}
 function clearAiImages(){_aiImages=[];renderAiImageThumbs();}
 
+// Extract the first balanced JSON value (array or object) from arbitrary AI text.
+// Handles code fences, leading prose, trailing prose, nested arrays, escaped quotes.
+function extractAiJson(text){
+  if(!text)return null;
+  // Strip markdown code fences if present: ```json ... ```  or  ``` ... ```
+  let s=text.replace(/```(?:json)?\s*/gi,'').replace(/```/g,'');
+  // Find candidate starts (prefer array over object)
+  const tryParse=(opener)=>{
+    const closer=opener==='['?']':'}';
+    const start=s.indexOf(opener);
+    if(start<0)return null;
+    let depth=0,inStr=false,esc=false;
+    for(let i=start;i<s.length;i++){
+      const c=s[i];
+      if(esc){esc=false;continue;}
+      if(c==='\\'&&inStr){esc=true;continue;}
+      if(c==='"'){inStr=!inStr;continue;}
+      if(inStr)continue;
+      if(c===opener)depth++;
+      else if(c===closer){
+        depth--;
+        if(depth===0){
+          const slice=s.slice(start,i+1);
+          try{return JSON.parse(slice);}catch(e){return null;}
+        }
+      }
+    }
+    return null;
+  };
+  // Prefer array (multi-case), fall back to object (single case)
+  return tryParse('[')??tryParse('{');
+}
+
 async function aiAnalyze(){
   const text=document.getElementById('ai-input').value.trim();
   const status=document.getElementById('ai-status');
@@ -4657,7 +4690,7 @@ async function aiAnalyze(){
 - 若對話沒提到的欄位填 null
 - 日期一定要 YYYY-MM-DD 格式；當年若未明說，預設今年（${new Date().getFullYear()}）
 - type 與 quotationItemId 要對應到該客戶的報價單；如果找到 quotationItemId 就把 amount 填成該項目價格
-- 不要額外文字，只回 JSON（單一物件或陣列）
+- 不要額外文字，只回純 JSON（單一物件或陣列）。**不要包 markdown 程式碼框（不要用 \`\`\`json）、不要前後加說明文字、不要寫註解**。整個回應 = 一個合法的 JSON
 
 客戶專屬慣例（只在對應到該客戶時套用，其他客戶請勿套用）：
 
@@ -4686,7 +4719,7 @@ async function aiAnalyze(){
       },
       body:JSON.stringify({
         model:S.settings.aiModel,
-        max_tokens:1024,
+        max_tokens:8192,
         system:sysPrompt,
         messages:[{
           role:'user',
@@ -4706,13 +4739,9 @@ async function aiAnalyze(){
     }
     const data=await resp.json();
     const replyText=data.content?.[0]?.text||'';
-    // Try to extract a JSON array first, fall back to object
-    const arrMatch=replyText.match(/\[[\s\S]*\]/);
-    const objMatch=replyText.match(/\{[\s\S]*\}/);
-    let parsed;
-    if(arrMatch){parsed=JSON.parse(arrMatch[0]);}
-    else if(objMatch){parsed=JSON.parse(objMatch[0]);}
-    else throw new Error('AI 回覆不是有效 JSON');
+    // Robust JSON extraction: strip code fences + find balanced [...] or {...}
+    const parsed=extractAiJson(replyText);
+    if(parsed===null)throw new Error('AI 回覆無法解析為 JSON');
     const cases=Array.isArray(parsed)?parsed:[parsed];
     if(cases.length===0)throw new Error('AI 沒辨識到任何案件');
     if(cases.length===1){
