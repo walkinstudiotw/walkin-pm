@@ -4626,15 +4626,32 @@ async function aiAnalyze(){
 {
   "clientId": string|null,         // 對應到上面 clients 的 id；找不到則 null
   "clientNameGuess": string|null,  // 若 clientId 為 null，這裡填從對話辨識到的客戶名稱
-  "title": string,                  // 案件標題，例如「EP25 全統西點 陳星緯」
+  "title": string,                  // 案件標題，例如「EP25 全統西點 陳星緯」、「S3T1Ep01_CH」
   "type": "Podcast"|"Video Podcast"|"錄音"|"其他",
   "quotationItemId": string|null,  // 對應到該客戶的報價項目 id；找不到則 null
-  "amount": number|null,            // 從報價項目帶入或對話中提到的金額
-  "dueDate": string|null,           // 交期，YYYY-MM-DD 格式（通常是上架日；若只提到「上架日 5/22」則填當年的 2026-05-22）
-  "materialNote": string|null,      // 素材說明（例：兩軌、原始錄音、60min）
-  "paymentNote": string|null,       // 收款備註
-  "notes": string|null              // 其他備註，包含來賓、主題、特殊需求
+  "amount": number|null,            // 從報價項目帶入或對話中提到的金額（**附屬案件填 0**）
+  "dueDate": string|null,           // 交期，YYYY-MM-DD 格式
+  "materialNote": string|null,
+  "paymentNote": string|null,
+  "notes": string|null,
+  "linkToTitle": string|null        // 若此案件附屬於另一個案件，填那個案件的完整 title（會自動連結為「附屬計費」）
 }
+
+通用能力：
+
+【序列展開】當使用者用「以此規則新增至 X」、「重複 N 次」、「~ S3T12」這種模式描述，請根據規則自動展開成多個案件。
+範例輸入：「S3T1Ep01_CH, S3T1Ep02_EN 以此規則新增至 S3T12」
+→ 應產出 24 個案件：S3T1Ep01_CH / S3T1Ep02_EN / S3T2Ep03_CH / S3T2Ep04_EN / ... / S3T12Ep23_CH / S3T12Ep24_EN
+
+【附屬計費】若使用者說「A 附屬於 B」、「A 跟 B 一起請款」、「A 不獨立計費，併入 B」、「CH 附屬於 EN」這類描述：
+- 把 A 的 "amount" 設為 0
+- 在 A 的物件加 "linkToTitle": "<B 的完整 title>"
+- B 的 "amount" 填使用者指定的價格
+- 系統會在建立後自動把 A 連結到 B（成為 B 的附屬案件）
+
+【類型推斷】若 title 用 "_CH"、"_EN" 這類後綴表達語言/版本變體，不要當成 type。type 仍從上下文選 Podcast / Video Podcast / 錄音 / 其他（多數情況用 Podcast）。
+
+【欄位繼承】單一輸入中所有案件共用的設定（如客戶、type、價格規則）請套用到每個案件。
 
 規則：
 - 若對話沒提到的欄位填 null
@@ -4734,6 +4751,7 @@ function openAiMultiPreview(cases){
     materialNote:c.materialNote||'',
     paymentNote:c.paymentNote||'',
     notes:c.notes||'',
+    linkToTitle:c.linkToTitle||'',  // 附屬於哪個 title（建立時 resolve 成 linkedToCaseId）
   }));
   _aimSelected=_aimCases.map(()=>true);
   document.getElementById('aim-count').textContent=_aimCases.length;
@@ -4751,11 +4769,12 @@ function renderAimList(){
     const noClient=!cs.clientId;
     const rowDim=checked?'':'opacity:.4';
     const warn=noClient?`<div style="font-size:.6rem;color:#a86a00;margin-top:3px">⚠️ 未對應到客戶${cs.clientNameGuess?`（AI 猜：${escHtml(cs.clientNameGuess)}）`:''}，請手動選擇</div>`:'';
+    const linkHtml=cs.linkToTitle?`<div style="font-size:.62rem;color:#5a7a8a;margin-top:3px;font-style:italic">↳ 附屬於：<b>${escHtml(cs.linkToTitle)}</b>（建立後自動連結，金額會強制為 0）</div>`:'';
     return `<div class="aim-row" style="background:#fff;border:1px solid #e8e8e8;border-radius:6px;padding:8px 10px;margin-bottom:6px;${rowDim}">
       <div style="display:grid;grid-template-columns:24px 1fr 90px;gap:8px;align-items:center;margin-bottom:5px">
         <input type="checkbox" ${checked?'checked':''} onchange="aimToggleRow(${i})" style="accent-color:#1e6038;width:14px;height:14px">
         <input type="text" value="${escHtml(cs.title)}" oninput="_aimCases[${i}].title=this.value" placeholder="案件標題" style="background:#fafafa;border:1px solid #d8d8d8;border-radius:4px;padding:4px 8px;font-size:.78rem;font-weight:600;color:#1a1a1a;outline:none">
-        <input type="number" value="${cs.amount===''?'':cs.amount}" oninput="_aimCases[${i}].amount=this.value===''?'':parseInt(this.value)||0" placeholder="金額" style="background:#fafafa;border:1px solid #d8d8d8;border-radius:4px;padding:4px 8px;font-size:.72rem;text-align:right;font-family:'JetBrains Mono',monospace;color:#1e6038;outline:none">
+        <input type="number" value="${cs.amount===''?'':cs.amount}" ${cs.linkToTitle?'disabled':''} oninput="_aimCases[${i}].amount=this.value===''?'':parseInt(this.value)||0" placeholder="${cs.linkToTitle?'(附屬無價)':'金額'}" style="background:${cs.linkToTitle?'#eee':'#fafafa'};border:1px solid #d8d8d8;border-radius:4px;padding:4px 8px;font-size:.72rem;text-align:right;font-family:'JetBrains Mono',monospace;color:#1e6038;outline:none">
       </div>
       <div style="display:grid;grid-template-columns:1fr 130px 130px;gap:6px;align-items:center">
         <select onchange="_aimCases[${i}].clientId=this.value" class="form-select" style="font-size:.7rem;padding:3px 8px">
@@ -4767,6 +4786,7 @@ function renderAimList(){
         </select>
         <input type="date" value="${escHtml(cs.dueDate)}" oninput="_aimCases[${i}].dueDate=this.value" style="background:#fafafa;border:1px solid #d8d8d8;border-radius:4px;padding:3px 8px;font-size:.7rem;color:#1a1a1a;font-family:inherit;outline:none">
       </div>
+      ${linkHtml}
       ${warn}
     </div>`;
   }).join('');
@@ -4788,10 +4808,29 @@ function aimConfirm(){
     document.getElementById('aim-status').innerHTML=`<span style="color:#c53030">⚠️ ${noClient.length} 個案件未選擇客戶，無法建立。請為它們選好客戶或取消勾選。</span>`;
     return;
   }
+  // Two-pass build:
+  // 1) Assign IDs upfront and build title→id map
+  // 2) Resolve linkToTitle → linkedToCaseId from the map; save
   const now=Date.now();
-  toCreate.forEach(o=>{
+  const titleToId=new Map();
+  const built=toCreate.map(o=>{
+    const id=uid();
+    if(o.title)titleToId.set(o.title.trim(),id);
+    return {o,id};
+  });
+  let unresolved=0;
+  built.forEach(({o,id})=>{
+    let linkedToCaseId=null;
+    if(o.linkToTitle){
+      const target=titleToId.get(o.linkToTitle.trim());
+      if(target)linkedToCaseId=target;
+      else unresolved++;
+    }
+    const isLinked=!!linkedToCaseId;
+    // Inherit client default for shareWithStudio
+    const client=S.clients[o.clientId];
     const c={
-      id:uid(),
+      id,
       clientId:o.clientId,
       title:o.title||'',
       type:o.type||'Podcast',
@@ -4803,9 +4842,9 @@ function aimConfirm(){
       notes:o.notes||'',
       isOutsourced:false,
       cost:0,
-      shareWithStudio:true,
-      pricing:{quotationItemId:o.quotationItemId||null,amount:o.amount===''?0:(parseInt(o.amount)||0),addons:[]},
-      linkedToCaseId:null,
+      shareWithStudio:client?.defaultShareWithStudio!==false,
+      pricing:{quotationItemId:o.quotationItemId||null,amount:isLinked?0:(o.amount===''?0:(parseInt(o.amount)||0)),addons:[]},
+      linkedToCaseId,
       invoiceId:null,
       createdAt:now,
       updatedAt:now,
@@ -4813,7 +4852,11 @@ function aimConfirm(){
     saveCaseObj(c);
   });
   closeM('ai-multi-modal');
-  toast(`✅ 已建立 ${toCreate.length} 個案件`);
+  const linkedCount=built.filter(({o})=>o.linkToTitle&&titleToId.get(o.linkToTitle.trim())).length;
+  const msg=[`✅ 已建立 ${toCreate.length} 個案件`];
+  if(linkedCount)msg.push(`含 ${linkedCount} 個附屬連結`);
+  if(unresolved)msg.push(`⚠️ ${unresolved} 個附屬連結沒找到對應主案件`);
+  toast(msg.join(' · '));
 }
 
 function fillCaseFormFromAi(p){
