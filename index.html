@@ -1218,6 +1218,18 @@ select.form-select:focus{border-color:#666666}
         <input class="form-input" id="cl-account" placeholder="例：偏好 email 溝通、固定每月初請款...">
       </div>
     </div>
+
+    <div class="cl-section">
+      <div class="cl-section-title">💸 預設分潤設定（新案件帶入）</div>
+      <div style="display:flex;gap:14px;font-size:.78rem;align-items:center;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="cl-share-studio" style="accent-color:#a86a00" checked>
+          <span>新增此客戶的案件時，預設與工作室分潤（房子拿 30%）</span>
+        </label>
+        <span style="font-size:.62rem;color:#888;line-height:1.5">取消勾選 → 新案件預設「不分潤」，負責人拿 100%（仍可在單一案件覆寫）</span>
+      </div>
+    </div>
+
     <div class="modal-btns">
       <button class="btn-danger" id="cl-del-btn" onclick="confirmDelClient()" style="display:none">刪除</button>
       <button class="btn-cancel" onclick="closeM('client-modal')">取消</button>
@@ -2152,6 +2164,15 @@ function onClientChange(){
   refreshLinkedToOptions();
   // Also refresh the work-item picker label if currently set (it doesn't depend on client, but we keep API consistent)
   refreshFciTriggerLabel();
+  // For NEW cases only (not editing), inherit the client's default 分潤設定
+  if(!S.editCaseId){
+    const cid=document.getElementById('f-client').value;
+    const c=cid?S.clients[cid]:null;
+    if(c){
+      // Default true if undefined (legacy clients keep sharing)
+      document.getElementById('f-share-studio').checked=c.defaultShareWithStudio!==false;
+    }
+  }
 }
 function refreshFciTriggerLabel(){
   const wid=document.getElementById('f-quote-item').value;
@@ -2783,6 +2804,7 @@ function openAddClient(){
   document.getElementById('client-modal-title').textContent='新增客戶';
   document.getElementById('cl-del-btn').style.display='none';
   ['cl-name','cl-contact','cl-phone','cl-company','cl-taxid','cl-email','cl-account','cl-invoice-prefix','cl-invoice-email'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  const ss=document.getElementById('cl-share-studio');if(ss)ss.checked=true;
   openM('client-modal');
 }
 function openEditClient(id){
@@ -2799,6 +2821,7 @@ function openEditClient(id){
   document.getElementById('cl-account').value=c.accountInfo||'';
   const ip=document.getElementById('cl-invoice-prefix');if(ip)ip.value=c.invoicePrefix||'';
   const ie=document.getElementById('cl-invoice-email');if(ie)ie.value=c.invoiceEmail||'';
+  const ss=document.getElementById('cl-share-studio');if(ss)ss.checked=c.defaultShareWithStudio!==false;
   openM('client-modal');
 }
 function saveClient(){
@@ -2816,6 +2839,7 @@ function saveClient(){
     accountInfo:document.getElementById('cl-account').value.trim(),
     invoicePrefix:(document.getElementById('cl-invoice-prefix')?.value||'').trim().toUpperCase(),
     invoiceEmail:(document.getElementById('cl-invoice-email')?.value||'').trim(),
+    defaultShareWithStudio:document.getElementById('cl-share-studio')?.checked!==false,
     quotation:existing.quotation||{items:[],updatedAt:Date.now()},
   };
   saveClientObj(c);
