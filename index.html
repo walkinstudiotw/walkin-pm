@@ -5432,11 +5432,11 @@ function renderInvoiceEditor(){
       </div>
       <div class="form-group">
         <label class="form-label">開立日</label>
-        <input class="form-input" type="text" value="${escHtml(inv.issuedDate||'')}" oninput="updateInvoiceField('issuedDate',this.value)" placeholder="YYYY/MM/DD">
+        <input class="form-input" type="date" value="${escHtml((inv.issuedDate||'').replace(/\//g,'-'))}" onchange="updateInvoiceField('issuedDate',this.value.replace(/-/g,'/'))">
       </div>
       <div class="form-group">
         <label class="form-label">付款期限</label>
-        <input class="form-input" type="text" value="${escHtml(inv.dueDate||'')}" oninput="updateInvoiceField('dueDate',this.value)" placeholder="YYYY/MM/DD">
+        <input class="form-input" type="date" value="${escHtml((inv.dueDate||'').replace(/\//g,'-'))}" onchange="updateInvoiceField('dueDate',this.value.replace(/-/g,'/'))">
       </div>
       <div class="form-group">
         <label class="form-label">稅率 (%)</label>
