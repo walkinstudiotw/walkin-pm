@@ -5202,7 +5202,14 @@ function createBlankInvoice(clientId,billingMonth,prefixOverride,seedCases){
   // Build items from seed cases (if any). Accepts both old shape (string ids) and new shape ({caseId,workItemId})
   const items=[];
   const sourceCaseIds=[];
-  (seedCases||[]).forEach(seed=>{
+  // Sort seed cases by case title (zh-TW collation, numeric-aware) — default order
+  // Manual reorder via ▲▼ in editor still works after creation
+  const sortedSeeds=(seedCases||[]).slice().sort((a,b)=>{
+    const csa=S.cases[typeof a==='string'?a:a.caseId];
+    const csb=S.cases[typeof b==='string'?b:b.caseId];
+    return (csa?.title||'').localeCompare(csb?.title||'','zh-TW',{numeric:true});
+  });
+  sortedSeeds.forEach(seed=>{
     const csid=typeof seed==='string'?seed:seed.caseId;
     const wid=typeof seed==='string'?'':seed.workItemId;
     const cs=S.cases[csid];
@@ -5600,6 +5607,12 @@ function confirmAddCasesToInvoice(){
   if(!inv)return;
   const checked=Array.from(document.querySelectorAll('.iac-case-cb:checked'));
   if(!checked.length){toast('請至少勾選一個案件',true);return;}
+  // Sort by case title so appended items keep alphabetical order
+  checked.sort((a,b)=>{
+    const csa=S.cases[a.dataset.caseId];
+    const csb=S.cases[b.dataset.caseId];
+    return (csa?.title||'').localeCompare(csb?.title||'','zh-TW',{numeric:true});
+  });
   let added=0,cascaded=0;
   inv.items=inv.items||[];
   inv.sourceCaseIds=inv.sourceCaseIds||[];
