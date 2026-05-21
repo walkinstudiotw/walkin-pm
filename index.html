@@ -1829,7 +1829,7 @@ function ensureInvoice(inv){
   if(inv.taxRate==null)inv.taxRate=0;
   if(!inv.serviceNotes)inv.serviceNotes='';
   if(!inv.terms)inv.terms='';
-  if(inv.showSignature==null)inv.showSignature=true;
+  if(inv.showSignature==null)inv.showSignature=false;  // invoice default: 不顯示客戶簽章區
 }
 
 // ── HELPERS ────────────────────────────────────────
@@ -5260,7 +5260,7 @@ function createBlankInvoice(clientId,billingMonth,prefixOverride,seedCases){
     taxRate:0,
     serviceNotes:'',
     terms:'',
-    showSignature:true,
+    showSignature:false,
     total:subtotal,
     createdAt:Date.now(),
     updatedAt:Date.now(),
@@ -5365,7 +5365,7 @@ function doGenerateMonthlyInvoices(month){
       taxRate:0,
       serviceNotes:'',
       terms:'',
-      showSignature:true,
+      showSignature:false,
       total:subtotal,
       createdAt:Date.now(),
       updatedAt:Date.now(),
@@ -5453,6 +5453,12 @@ function renderInvoiceEditor(){
       <div class="form-group full">
         <label class="form-label">備註（顯示在 PDF 條款區）</label>
         <textarea class="form-textarea" rows="2" oninput="updateInvoiceField('terms',this.value)" placeholder="例：付款請於 30 日內完成、發票將於收款後寄送">${escHtml(inv.terms||'')}</textarea>
+      </div>
+      <div class="form-group full">
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:.74rem;color:#666666">
+          <input type="checkbox" ${inv.showSignature?'checked':''} onchange="updateInvoiceField('showSignature',this.checked)" style="accent-color:#1e6038">
+          顯示客戶簽章區（PDF 上）
+        </label>
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin:10px 0 6px">
