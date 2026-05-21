@@ -5883,8 +5883,15 @@ async function sendInvoiceViaWebhook(){
     toast('請先在 ⚙️ 設定中填入 Apps Script Web App URL',true);
     openSettings();return;
   }
-  const to=client.invoiceEmail||client.email;
-  if(!to){toast('該客戶沒有 Email',true);return;}
+  // Fallback chain: client billing email → client contact email → studio's own email (寄給自己留底)
+  const studioEmail=S.globalSettings?.company?.email||'';
+  let to=client.invoiceEmail||client.email;
+  const isSelfFallback=!to;
+  if(isSelfFallback){
+    if(!studioEmail){toast('客戶與工作室都沒有 Email — 請先在 ⚙️ 設定填工作室 Email',true);return;}
+    to=studioEmail;
+    toast(`⚠️ 客戶沒設 Email，改寄到 ${studioEmail}`,true);
+  }
   toast('產生 PDF 並寄送中...');
   // Build PDF as base64
   const stage=document.getElementById('quote-pdf-stage');
@@ -5906,11 +5913,13 @@ async function sendInvoiceViaWebhook(){
     const reader=new FileReader();
     const dataUrl=await new Promise((res,rej)=>{reader.onload=()=>res(reader.result);reader.onerror=rej;reader.readAsDataURL(blob);});
     const base64=dataUrl.split(',')[1];
+    const subjectPrefix=isSelfFallback?'[自寄留底] ':'';
+    const bodyPrefix=isSelfFallback?`⚠️ 此封是「客戶未設 Email」自動寄到工作室留底。\n客戶：${client.name}（contactName: ${client.contactName||'(無)'}）\n請手動轉寄或補填客戶 Email 後重寄。\n\n────────────────\n\n`:'';
     const payload={
       to,
-      cc:'housecoworking.co@gmail.com',
-      subject:`Invoice ${inv.invoiceNumber} · ${client.name}`,
-      body:`Hi ${client.contactName||client.name}，\n\n附上 ${inv.billingMonth} 的請款明細，總額 $${fmtMoney(inv.total)}，付款期限 ${inv.dueDate}。\n如有問題請聯繫。\n\n——\nWalkIn Studio`,
+      cc:isSelfFallback?'':'housecoworking.co@gmail.com',  // 自寄留底時不 cc，避免雙份
+      subject:`${subjectPrefix}Invoice ${inv.invoiceNumber} · ${client.name}`,
+      body:`${bodyPrefix}Hi ${client.contactName||client.name}，\n\n附上 ${inv.billingMonth} 的請款明細，總額 $${fmtMoney(inv.total)}，付款期限 ${inv.dueDate}。\n如有問題請聯繫。\n\n——\nWalkIn Studio`,
       pdfBase64:base64,
       filename:`Invoice_${inv.invoiceNumber}.pdf`,
     };
