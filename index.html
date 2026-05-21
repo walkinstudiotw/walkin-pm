@@ -1565,7 +1565,7 @@ select.form-select:focus{border-color:#666666}
     </div>
     <div class="form-row">
       <div class="form-group">
-        <label class="form-label">服務類型 *</label>
+        <label class="form-label">服務項目 *</label>
         <input class="form-input" id="ii-service" placeholder="例：Podcast 剪輯 (30min)">
       </div>
       <div class="form-group">
@@ -5196,27 +5196,31 @@ function createBlankInvoice(clientId,billingMonth,prefixOverride,seedCases){
     const addonSum=caseAddons.reduce((s,a)=>s+(a.amount||0)*a.qty,0);
     const casePrice=cs.pricing?.amount||0;
     const baseLinePrice=Math.max(0,casePrice-addonSum);
+    // Resolve service item from the case's own quotationItemId if the inv-create modal
+    // didn't explicitly pick a workItem (w == null)
+    const caseWi=cs.pricing?.quotationItemId?S.workItems[cs.pricing.quotationItemId]:null;
+    const effectiveWi=w||caseWi;
     items.push({
       itemId:uid(),
       sourceCaseId:cs.id,
-      sourceWorkItemId:w?w.id:null,
+      sourceWorkItemId:effectiveWi?effectiveWi.id:null,
       label:cs.title||'',
-      serviceLabel:w?w.label:'',  // service type sub-label
-      category:w?(w.category||cs.type||''):(cs.type||''),
+      serviceLabel:effectiveWi?effectiveWi.label:'',  // 服務項目（從工作項目庫）
+      category:effectiveWi?(effectiveWi.category||cs.type||''):(cs.type||''),
       defaultPrice:baseLinePrice,
       qty:1,
-      unit:w?(w.unit||'集'):'集',
+      unit:effectiveWi?(effectiveWi.unit||'集'):'集',
     });
     // Bring in any addons saved on the case (qty>0) as separate Invoice line items
     caseAddons.forEach(a=>{
       items.push({
         itemId:uid(),
         sourceCaseId:cs.id,
-        sourceWorkItemId:w?w.id:null,
+        sourceWorkItemId:effectiveWi?effectiveWi.id:null,
         sourceAddonId:a.addonId,
         label:a.label||'',
-        serviceLabel:w?(w.label||''):'',
-        category:w?(w.category||cs.type||''):(cs.type||''),
+        serviceLabel:effectiveWi?(effectiveWi.label||''):'',
+        category:effectiveWi?(effectiveWi.category||cs.type||''):(cs.type||''),
         defaultPrice:a.amount||0,
         qty:a.qty,
         unit:'',
@@ -5442,13 +5446,13 @@ function renderInvoiceEditor(){
     <div style="display:flex;flex-direction:column;gap:5px">
       ${inv.items.length===0?'<div style="padding:14px;text-align:center;color:#666;font-size:.74rem;border:1px dashed #d8d8d8;border-radius:6px">尚無項目</div>':
         `<div style="display:grid;grid-template-columns:140px 1fr 70px 40px 50px 70px 22px;gap:5px;align-items:center;padding:3px 6px;font-size:.6rem;color:#666;letter-spacing:.4px;text-transform:uppercase">
-          <div>服務</div><div>內容</div><div style="text-align:right">單價</div><div style="text-align:center">數量</div><div style="text-align:center">單位</div><div style="text-align:right">小計</div><div></div>
+          <div>服務項目</div><div>內容</div><div style="text-align:right">單價</div><div style="text-align:center">數量</div><div style="text-align:center">單位</div><div style="text-align:right">小計</div><div></div>
         </div>`+
         inv.items.map((it,idx)=>{
           const qty=it.qty==null?1:it.qty;
           const sub=(it.defaultPrice||0)*qty;
           return `<div style="display:grid;grid-template-columns:140px 1fr 70px 40px 50px 70px 22px;gap:5px;align-items:center;padding:5px 6px;background:#ffffff;border:1px solid #e8e8e8;border-radius:6px;font-size:.72rem">
-            <input type="text" value="${escHtml(it.serviceLabel||'')}" oninput="updateInvoiceItemField(${idx},'serviceLabel',this.value)" placeholder="服務類型" style="background:#f5f5f5;border:1px solid #d8d8d8;border-radius:4px;padding:3px 6px;color:#a08560;font-family:inherit;font-size:.7rem;outline:none">
+            <input type="text" value="${escHtml(it.serviceLabel||'')}" oninput="updateInvoiceItemField(${idx},'serviceLabel',this.value)" placeholder="服務項目" style="background:#f5f5f5;border:1px solid #d8d8d8;border-radius:4px;padding:3px 6px;color:#a08560;font-family:inherit;font-size:.7rem;outline:none">
             <input type="text" value="${escHtml(it.label)}" oninput="updateInvoiceItemField(${idx},'label',this.value)" placeholder="內容（案件名稱）" style="background:#f5f5f5;border:1px solid #d8d8d8;border-radius:4px;padding:3px 6px;color:#1a1a1a;font-family:inherit;font-size:.72rem;outline:none">
             <input type="number" value="${it.defaultPrice||0}" oninput="updateInvoiceItemField(${idx},'defaultPrice',parseInt(this.value)||0)" style="background:#f5f5f5;border:1px solid #d8d8d8;border-radius:4px;padding:3px 6px;color:#1e6038;font-family:'JetBrains Mono',monospace;font-size:.7rem;text-align:right;outline:none">
             <input type="number" value="${qty}" oninput="updateInvoiceItemField(${idx},'qty',parseInt(this.value)||0)" style="background:#f5f5f5;border:1px solid #d8d8d8;border-radius:4px;padding:3px 6px;color:#444444;font-family:'JetBrains Mono',monospace;font-size:.7rem;text-align:center;outline:none">
@@ -5554,7 +5558,7 @@ function setIiMaster(wid,label){
   document.getElementById('ii-master-trigger-text').textContent=wid?label:'— 自訂輸入 —';
   document.getElementById('ii-master-panel').style.display='none';
   document.getElementById('ii-master-trigger').classList.remove('open');
-  // Auto-fill: workItem.label → 服務類型, leave 內容 for user to fill
+  // Auto-fill: workItem.label → 服務項目, leave 內容 for user to fill
   if(wid){
     const w=S.workItems[wid];
     if(w){
@@ -5569,7 +5573,7 @@ function saveInvoiceItemFromModal(){
   const inv=S.invoices[S.selectedInvoiceId];if(!inv){closeM('invoice-item-modal');return;}
   const service=document.getElementById('ii-service').value.trim();
   const label=document.getElementById('ii-label').value.trim();
-  if(!service){toast('請輸入服務類型',true);return;}
+  if(!service){toast('請輸入服務項目',true);return;}
   if(!label){toast('請輸入內容（案件名稱）',true);return;}
   const wid=document.getElementById('ii-from-master').value;
   inv.items=inv.items||[];
@@ -5822,7 +5826,7 @@ function buildInvoicePdfHtml(inv,client){
       </div>
       <table class="qpdf-d-tbl">
         <thead><tr>
-          <th class="left">服務</th>
+          <th class="left">服務項目</th>
           <th class="left">內容</th>
           <th class="right">單價</th>
           <th class="right">數量</th>
