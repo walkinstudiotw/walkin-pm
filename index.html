@@ -1548,6 +1548,23 @@ select.form-select:focus{border-color:#666666}
   </div>
 </div>
 
+<!-- INVOICE ADD-CASES MODAL (帶入案件 from existing editor) -->
+<div class="modal-overlay" id="invoice-add-cases-modal">
+  <div class="modal modal-lg">
+    <div class="modal-title">📋 帶入此客戶尚未請款的案件</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <span style="font-size:.7rem;color:#666" id="iac-summary">— 載入中 —</span>
+      <span class="spacer" style="flex:1"></span>
+      <button type="button" class="nav-btn" onclick="iacToggleAll()" style="font-size:.66rem;padding:2px 8px">全選 / 取消</button>
+    </div>
+    <div id="iac-case-list" style="max-height:340px;overflow-y:auto;border:1px solid #d8d8d8;border-radius:8px;background:#f5f5f5;padding:6px"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeM('invoice-add-cases-modal')">取消</button>
+      <button class="btn-primary" id="iac-submit" onclick="confirmAddCasesToInvoice()">帶入勾選的案件</button>
+    </div>
+  </div>
+</div>
+
 <!-- INVOICE ITEM MODAL -->
 <div class="modal-overlay" id="invoice-item-modal">
   <div class="modal modal-lg">
@@ -5441,6 +5458,7 @@ function renderInvoiceEditor(){
     <div style="display:flex;align-items:center;gap:8px;margin:10px 0 6px">
       <span style="font-size:.78rem;font-weight:700;color:#666666">項目（${inv.items.length} 項）</span>
       <span class="spacer"></span>
+      <button class="nav-btn" onclick="openAddCasesToInvoice()" style="font-size:.7rem;padding:3px 10px" title="從此客戶尚未請款的已完成案件中挑選">＋ 帶入案件</button>
       <button class="nav-btn primary" onclick="addInvoiceItem()" style="font-size:.7rem;padding:3px 10px">＋ 加項目</button>
     </div>
     <div style="display:flex;flex-direction:column;gap:5px">
@@ -5482,6 +5500,153 @@ function updateInvoiceField(field,val){
 function addInvoiceItem(){
   // Open modal so user can pick from work items library or type custom
   openAddInvoiceItem();
+}
+
+// ── 帶入此客戶的未請款案件（在編輯既有 invoice 時）──
+function openAddCasesToInvoice(){
+  const inv=S.invoices[S.selectedInvoiceId];
+  if(!inv){toast('找不到 invoice',true);return;}
+  renderIacList();
+  openM('invoice-add-cases-modal');
+}
+function getIacEligibleCases(){
+  const inv=S.invoices[S.selectedInvoiceId];
+  if(!inv)return [];
+  // Cases for THIS invoice's client that are done + un-invoiced + not linked children
+  return Object.values(S.cases||{}).filter(cs=>
+    cs && cs.clientId===inv.clientId
+    && cs.status==='done'
+    && !cs.invoiceId
+    && !cs.linkedToCaseId
+  ).sort((a,b)=>(a.dueDate||'').localeCompare(b.dueDate||''));
+}
+function renderIacList(){
+  const list=document.getElementById('iac-case-list');
+  const summary=document.getElementById('iac-summary');
+  const cases=getIacEligibleCases();
+  const wis=workItemList().filter(w=>!w.isBundle);
+  const wiOptionsHtml=(selectedId)=>{
+    const groups=new Map();
+    wis.forEach(w=>{
+      const cat=(w.category||'').trim()||'未分類';
+      if(!groups.has(cat))groups.set(cat,[]);
+      groups.get(cat).push(w);
+    });
+    let html='<option value="">— 使用案件原價 —</option>';
+    [...groups.keys()].sort((a,b)=>a.localeCompare(b,'zh-TW')).forEach(cat=>{
+      html+=`<optgroup label="${escHtml(cat)}">`+groups.get(cat).map(w=>`<option value="${w.id}" ${w.id===selectedId?'selected':''}>${escHtml(w.label)} ($${fmtMoney(w.defaultPrice)})</option>`).join('')+'</optgroup>';
+    });
+    return html;
+  };
+  if(!cases.length){
+    list.innerHTML='<div style="padding:18px;text-align:center;color:#666;font-size:.74rem">此客戶沒有「已完成且尚未請款」的案件</div>';
+    summary.textContent='0 個案件';
+    return;
+  }
+  const rows=cases.map(cs=>{
+    let autoMatch=null;
+    if(cs.type){
+      autoMatch=wis.find(w=>(w.category||'').trim()===cs.type)||wis.find(w=>(w.label||'').includes(cs.type));
+    }
+    // Prefer the case's own quotationItemId if set
+    const caseWid=cs.pricing?.quotationItemId;
+    const caseWi=caseWid?S.workItems[caseWid]:null;
+    const matchedId=caseWi?.id||autoMatch?.id||'';
+    const activeAddons=(cs.pricing?.addons||[]).filter(a=>a.qty>0);
+    const addonSum=activeAddons.reduce((s,a)=>s+(a.amount||0)*(a.qty||0),0);
+    const casePrice=cs.pricing?.amount||0;
+    const children=Object.values(S.cases).filter(x=>x.linkedToCaseId===cs.id);
+    const childrenHtml=children.length?`<div style="margin-left:32px;margin-top:4px;font-size:.62rem;color:#5a7a8a;font-style:italic">↳ 含 ${children.length} 個附屬：${children.map(ch=>escHtml(ch.title||'')+' ('+escHtml(ch.type||'')+')').join('、')}</div>`:'';
+    const addonNote=addonSum?`<div style="margin-left:32px;margin-top:3px;font-size:.62rem;color:#a86a00;font-style:italic">➕ 含加減項：${activeAddons.map(a=>`${escHtml(a.label)}×${a.qty}`).join('、')} = ${addonSum>=0?'+':''}$${fmtMoney(addonSum)}</div>`:'';
+    return `<div class="iac-row" data-case-id="${cs.id}" style="padding:8px 10px;border-bottom:1px solid #e8e8e8;font-size:.72rem;color:#444">
+      <div style="display:grid;grid-template-columns:24px 1fr 80px 90px;gap:8px;align-items:center">
+        <input type="checkbox" class="iac-case-cb" data-case-id="${cs.id}" checked style="accent-color:#1e6038;width:14px;height:14px">
+        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="font-weight:600;color:#1a1a1a">${escHtml(cs.title||'')}</span></div>
+        <div style="font-size:.66rem;color:#888;font-family:'JetBrains Mono',monospace">${cs.dueDate||'—'}</div>
+        <div style="text-align:right;color:#1e6038;font-family:'JetBrains Mono',monospace">$${fmtMoney(casePrice)}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;margin-left:32px;margin-top:5px">
+        <span style="font-size:.62rem;color:#888;flex-shrink:0">服務項目 →</span>
+        <select class="iac-case-wi" data-case-id="${cs.id}" style="flex:1;background:#fafafa;border:1px solid #d8d8d8;border-radius:4px;padding:3px 6px;color:#444;font-size:.66rem;font-family:inherit;outline:none">
+          ${wiOptionsHtml(matchedId)}
+        </select>
+      </div>
+      ${addonNote}
+      ${childrenHtml}
+    </div>`;
+  }).join('');
+  list.innerHTML=rows;
+  summary.textContent=`${cases.length} 個案件可選`;
+}
+function iacToggleAll(){
+  const cbs=document.querySelectorAll('.iac-case-cb');
+  const allChecked=Array.from(cbs).every(c=>c.checked);
+  cbs.forEach(c=>c.checked=!allChecked);
+}
+function confirmAddCasesToInvoice(){
+  const inv=S.invoices[S.selectedInvoiceId];
+  if(!inv)return;
+  const checked=Array.from(document.querySelectorAll('.iac-case-cb:checked'));
+  if(!checked.length){toast('請至少勾選一個案件',true);return;}
+  let added=0,cascaded=0;
+  inv.items=inv.items||[];
+  inv.sourceCaseIds=inv.sourceCaseIds||[];
+  checked.forEach(cb=>{
+    const csid=cb.dataset.caseId;
+    const cs=S.cases[csid];
+    if(!cs)return;
+    const wiSel=document.querySelector(`.iac-case-wi[data-case-id="${csid}"]`);
+    const wid=wiSel?.value||cs.pricing?.quotationItemId||'';
+    const w=wid?S.workItems[wid]:null;
+    const caseAddons=(cs.pricing?.addons||[]).filter(a=>a.qty&&a.qty>0);
+    const addonSum=caseAddons.reduce((s,a)=>s+(a.amount||0)*a.qty,0);
+    const casePrice=cs.pricing?.amount||0;
+    const baseLinePrice=Math.max(0,casePrice-addonSum);
+    inv.items.push({
+      itemId:uid(),
+      sourceCaseId:cs.id,
+      sourceWorkItemId:w?w.id:null,
+      label:cs.title||'',
+      serviceLabel:w?w.label:'',
+      category:w?(w.category||cs.type||''):(cs.type||''),
+      defaultPrice:baseLinePrice,
+      qty:1,
+      unit:w?(w.unit||'集'):'集',
+    });
+    caseAddons.forEach(a=>{
+      inv.items.push({
+        itemId:uid(),
+        sourceCaseId:cs.id,
+        sourceWorkItemId:w?w.id:null,
+        sourceAddonId:a.addonId,
+        label:a.label||'',
+        serviceLabel:w?w.label:'',
+        category:w?(w.category||cs.type||''):(cs.type||''),
+        defaultPrice:a.amount||0,
+        qty:a.qty,
+        unit:'',
+        isAddon:true,
+      });
+    });
+    inv.sourceCaseIds.push(cs.id);
+    // Mark source case + cascade children
+    cs.invoiceId=inv.id;cs.updatedAt=Date.now();saveCaseObj(cs);
+    Object.values(S.cases).forEach(child=>{
+      if(child.linkedToCaseId===cs.id&&!child.invoiceId){
+        child.invoiceId=inv.id;child.updatedAt=Date.now();saveCaseObj(child);
+        cascaded++;
+      }
+    });
+    added++;
+  });
+  recomputeInvoiceTotal(inv);
+  inv.updatedAt=Date.now();
+  saveInvoiceObj(inv);
+  closeM('invoice-add-cases-modal');
+  renderInvoiceEditor();
+  renderInvoicePreview();
+  const msg=`✅ 已帶入 ${added} 個案件${cascaded?` · 連動 ${cascaded} 個附屬`:''}`;
+  toast(msg);
 }
 function openAddInvoiceItem(){
   // Reset modal fields
