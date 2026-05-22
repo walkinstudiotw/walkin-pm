@@ -3233,12 +3233,12 @@ function renderWimBundleChildren(){
           ${(w.subItems||[]).map(s=>{const q=s.qty==null?1:s.qty;return `<option value="${escAttr(s.id)}" ${subPick===s.id?'selected':''}>${escHtml(s.label)}${q>1?` ×${q}`:''} — $${fmtMoney((s.price||0)*q)}</option>`;}).join('')}
         </select>
       </div>`:'';
-    return `<label class="wim-bundle-row${checked?' checked':''}" style="${hasSubs&&checked?'grid-template-columns:22px 1fr 100px 80px;flex-direction:column;align-items:stretch':''}">
+    return `<label class="wim-bundle-row${checked?' checked':''}" style="display:block;padding:6px 8px">
       <div style="display:grid;grid-template-columns:22px 1fr 100px 80px;gap:6px;align-items:center;width:100%">
         <input type="checkbox" ${checked?'checked':''} onchange="toggleWimBundleChild('${w.id}',this.checked)" style="accent-color:#c084fc">
-        <span class="lab">${escHtml(w.label)}${hasSubs?` <span style="font-size:.6rem;color:#888">(有 ${w.subItems.length} 子項目)</span>`:''}</span>
+        <span class="lab">${escHtml(w.label)}${hasSubs?` <span style="font-size:.6rem;color:#888">(${w.subItems.length} 子項目)</span>`:''}</span>
         <span class="cat">${escHtml(w.category||'未分類')}</span>
-        <span class="price">$${fmtMoney(w.defaultPrice)}</span>
+        <span class="price" style="text-align:right;color:#1e6038;font-family:'JetBrains Mono',monospace">$${fmtMoney(w.defaultPrice)}</span>
       </div>
       ${subPickerHtml}
     </label>`;
