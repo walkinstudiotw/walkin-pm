@@ -3242,7 +3242,7 @@ function renderWimBundleChildren(){
         <span style="flex-shrink:0">子項目</span>
         <select onchange="setWimBundleChildSub('${w.id}',this.value)" onclick="event.preventDefault();event.stopPropagation()" style="flex:1;background:#fafafa;border:1px solid #d8d8d8;border-radius:4px;padding:3px 6px;font-size:.66rem;color:#1a1a1a;font-family:inherit;outline:none">
           <option value="" ${subPick===''?'selected':''}>— 用預設（$${fmtMoney(w.defaultPrice||0)}）—</option>
-          ${(w.subItems||[]).map(s=>{const q=s.qty==null?1:s.qty;return `<option value="${escAttr(s.id)}" ${subPick===s.id?'selected':''}>${escHtml(s.label)}${q>1?` ×${q}`:''} — $${fmtMoney((s.price||0)*q)}</option>`;}).join('')}
+          ${(w.subItems||[]).map(s=>{const sLabel=(s.label||'').trim()||w.label;const unitHint=s.unit?` / ${s.unit}`:'';return `<option value="${escAttr(s.id)}" ${subPick===s.id?'selected':''}>${escHtml(sLabel)}${escHtml(unitHint)} — $${fmtMoney(s.price||0)}</option>`;}).join('')}
         </select>
       </div>`:'';
     return `<label class="wim-bundle-row${checked?' checked':''}" style="display:block;padding:6px 8px">
@@ -3342,7 +3342,14 @@ function saveWorkItem(){
   if(!label){toast(_wimIsBundle?'請填寫 Bundle 名稱':'請填寫項目名稱',true);return;}
   if(_wimIsBundle&&_wimChildIds.size===0){toast('Bundle 至少要包含一個工作項目',true);return;}
   // Sub-items only for non-bundle (variants); addons supported for both
-  const subs=_wimIsBundle?[]:_wimSubs.filter(s=>s.label&&s.label.trim()).map(s=>({id:s.id||uid(),label:s.label.trim(),price:parseInt(s.price)||0,unit:(s.unit||'').trim()}));
+  // Keep sub-items if they have a label OR a non-zero price OR a unit (label-less sub-items
+  // inherit the parent's label at display time — useful for "same name, different unit/price" variants)
+  const subs=_wimIsBundle?[]:_wimSubs.filter(s=>{
+    const hasLabel=s.label&&s.label.trim();
+    const hasPrice=parseInt(s.price)>0;
+    const hasUnit=(s.unit||'').trim();
+    return hasLabel||hasPrice||hasUnit;
+  }).map(s=>({id:s.id||uid(),label:(s.label||'').trim(),price:parseInt(s.price)||0,unit:(s.unit||'').trim()}));
   const adds=_wimAddons.filter(a=>a.label&&a.label.trim()).map(a=>({id:a.id||uid(),label:a.label.trim(),amount:parseInt(a.amount)||0}));
   const id=S.editWorkItemId||uid();
   saveWorkItemObj({
@@ -3936,7 +3943,8 @@ function onQiFromMasterChange(){
         const sub=subMap[cid]?(ci.subItems||[]).find(s=>s.id===subMap[cid]):null;
         const price=sub?(sub.price||0):(ci.defaultPrice||0);
         const unit=(sub&&sub.unit)?sub.unit:(ci.unit||'');
-        const labelExtra=sub?` — ${sub.label}${unit?` / ${unit}`:''}`:'';
+        const sLabel=sub?((sub.label||'').trim()):'';
+        const labelExtra=sub?(sLabel?` — ${sLabel}`:'')+(unit?` / ${unit}`:''):'';
         return {label:`${ci.label}${labelExtra}`, price};
       }).filter(Boolean);
       const sumChild=childItems.reduce((s,x)=>s+(x.price||0),0);
@@ -3976,9 +3984,10 @@ function renderQiSubOptions(w){
   const el=document.getElementById('qi-sub-options');
   el.innerHTML=w.subItems.map(s=>{
     const sel=_qiSelectedSubId===s.id?' selected':'';
+    const sLabel=(s.label||'').trim()||w.label;  // fallback to parent
     const unitHtml=s.unit?` <span style="font-size:.66rem;color:#888">/ ${escHtml(s.unit)}</span>`:'';
     return`<div class="qi-sub-opt${sel}" onclick="selectQiSub('${w.id}','${s.id}')">
-      <span class="lab">${escHtml(s.label)}${unitHtml}</span>
+      <span class="lab">${escHtml(sLabel)}${unitHtml}</span>
       <span class="price">$${fmtMoney(s.price)}</span>
     </div>`;
   }).join('');
@@ -3988,7 +3997,8 @@ function selectQiSub(wid,sid){
   const s=w.subItems.find(x=>x.id===sid);if(!s)return;
   _qiSelectedSubId=sid;
   // override label + price (and unit, if sub-item has one) with sub-item
-  document.getElementById('qi-label').value=`${w.label} - ${s.label}`;
+  const sLabel=(s.label||'').trim();
+  document.getElementById('qi-label').value=sLabel?`${w.label} - ${sLabel}`:w.label;
   document.getElementById('qi-price').value=s.price||0;
   if(s.unit){
     const unitEl=document.getElementById('qi-unit');
@@ -6449,8 +6459,9 @@ function buildPdfTemplateD(client){
               const sub=subId?(ci.subItems||[]).find(s=>s.id===subId):null;
               const price=sub?(sub.price||0):(ci.defaultPrice||0);
               const unit=(sub&&sub.unit)?sub.unit:(ci.unit||'');  // sub-item unit overrides parent unit
+              const sLabel=sub?((sub.label||'').trim()):'';  // sub label or empty
               return {
-                label:sub?`${ci.label} — ${sub.label}`:ci.label,
+                label:sub?(sLabel?`${ci.label} — ${sLabel}`:ci.label):ci.label,
                 price,
                 unit,
               };
