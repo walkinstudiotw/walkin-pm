@@ -1607,6 +1607,19 @@ select.form-select:focus{border-color:#666666}
         </div>
       </div>
     </div>
+
+    <!-- Sub-items picker (only shown when master has subItems) -->
+    <div class="form-group full" id="ii-sub-section" style="display:none">
+      <label class="form-label">📦 選擇子項目</label>
+      <div id="ii-sub-options" class="qi-sub-options"></div>
+    </div>
+
+    <!-- Addons picker (only shown when master has addons) -->
+    <div class="form-group full" id="ii-addon-section" style="display:none;background:#fff8ee;border:1px dashed #5a3d10;border-radius:6px;padding:8px 10px">
+      <label class="form-label" style="color:#a86a00">➕ 加減項（勾選後會新增為獨立 Invoice line）</label>
+      <div id="ii-addon-list"></div>
+    </div>
+
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeM('invoice-item-modal')">取消</button>
       <button class="btn-primary" onclick="saveInvoiceItemFromModal()">儲存</button>
@@ -5800,11 +5813,20 @@ function toggleIiMasterPicker(){
     },10);
   }
 }
+// Track sub-item + addon selection in the add-invoice-item modal
+let _iiSelectedSubId=null;
+let _iiSelectedAddonIds=new Set();
 function setIiMaster(wid,label){
   document.getElementById('ii-from-master').value=wid;
   document.getElementById('ii-master-trigger-text').textContent=wid?label:'— 自訂輸入 —';
   document.getElementById('ii-master-panel').style.display='none';
   document.getElementById('ii-master-trigger').classList.remove('open');
+  // Reset sub + addon selection on master change
+  _iiSelectedSubId=null;_iiSelectedAddonIds=new Set();
+  const subSec=document.getElementById('ii-sub-section');
+  const addSec=document.getElementById('ii-addon-section');
+  if(subSec)subSec.style.display='none';
+  if(addSec)addSec.style.display='none';
   // Auto-fill: workItem.label → 服務項目, leave 內容 for user to fill
   if(wid){
     const w=S.workItems[wid];
@@ -5813,8 +5835,59 @@ function setIiMaster(wid,label){
       document.getElementById('ii-category').value=w.category||'';
       document.getElementById('ii-price').value=w.defaultPrice||'';
       document.getElementById('ii-unit').value=w.unit||'集';
+      // Show sub-items section if any
+      if((w.subItems||[]).length){
+        if(subSec)subSec.style.display='block';
+        renderIiSubOptions(w);
+      }
+      // Show addons section if any
+      if((w.addons||[]).length){
+        if(addSec)addSec.style.display='block';
+        renderIiAddons(w);
+      }
     }
   }
+}
+function renderIiSubOptions(w){
+  const el=document.getElementById('ii-sub-options');
+  if(!el)return;
+  el.innerHTML=(w.subItems||[]).map(s=>{
+    const sel=_iiSelectedSubId===s.id?' selected':'';
+    const sLabel=(s.label||'').trim()||w.label;
+    const unitHtml=s.unit?` <span style="font-size:.66rem;color:#888">/ ${escHtml(s.unit)}</span>`:'';
+    return `<div class="qi-sub-opt${sel}" onclick="selectIiSub('${w.id}','${s.id}')">
+      <span class="lab">${escHtml(sLabel)}${unitHtml}</span>
+      <span class="price">$${fmtMoney(s.price)}</span>
+    </div>`;
+  }).join('');
+}
+function selectIiSub(wid,sid){
+  const w=S.workItems[wid];if(!w)return;
+  const s=(w.subItems||[]).find(x=>x.id===sid);if(!s)return;
+  _iiSelectedSubId=sid;
+  // override service label + price (and unit if sub has its own)
+  const sLabel=(s.label||'').trim();
+  document.getElementById('ii-service').value=sLabel?`${w.label} - ${sLabel}`:w.label;
+  document.getElementById('ii-price').value=s.price||0;
+  if(s.unit){document.getElementById('ii-unit').value=s.unit;}
+  renderIiSubOptions(w);
+}
+function renderIiAddons(w){
+  const el=document.getElementById('ii-addon-list');
+  if(!el)return;
+  el.innerHTML=(w.addons||[]).map(a=>{
+    const checked=_iiSelectedAddonIds.has(a.id)?'checked':'';
+    const isNeg=(a.amount||0)<0;
+    return `<label class="qi-addon-row">
+      <input type="checkbox" ${checked} onchange="toggleIiAddon('${a.id}',this.checked)">
+      <span class="lab">${escHtml(a.label)}</span>
+      <span class="amt ${isNeg?'neg':''}">${isNeg?'-':'+'}$${fmtMoney(Math.abs(a.amount||0))}</span>
+    </label>`;
+  }).join('');
+}
+function toggleIiAddon(aid,checked){
+  if(checked)_iiSelectedAddonIds.add(aid);
+  else _iiSelectedAddonIds.delete(aid);
 }
 function saveInvoiceItemFromModal(){
   const inv=S.invoices[S.selectedInvoiceId];if(!inv){closeM('invoice-item-modal');return;}
@@ -5823,7 +5896,9 @@ function saveInvoiceItemFromModal(){
   if(!service){toast('請輸入服務項目',true);return;}
   if(!label){toast('請輸入內容（案件名稱）',true);return;}
   const wid=document.getElementById('ii-from-master').value;
+  const w=wid?S.workItems[wid]:null;
   inv.items=inv.items||[];
+  // Push the main item
   inv.items.push({
     itemId:uid(),
     label,
@@ -5833,7 +5908,25 @@ function saveInvoiceItemFromModal(){
     qty:parseInt(document.getElementById('ii-qty').value)||1,
     unit:document.getElementById('ii-unit').value.trim()||'集',
     sourceWorkItemId:wid||null,
+    sourceSubItemId:_iiSelectedSubId||null,
   });
+  // Push selected addons as separate invoice lines
+  if(w&&_iiSelectedAddonIds.size){
+    (w.addons||[]).filter(a=>_iiSelectedAddonIds.has(a.id)).forEach(a=>{
+      inv.items.push({
+        itemId:uid(),
+        label:a.label,
+        serviceLabel:service,  // tag back to same service for visual grouping
+        category:document.getElementById('ii-category').value.trim(),
+        defaultPrice:a.amount||0,
+        qty:1,
+        unit:'',
+        sourceWorkItemId:wid||null,
+        sourceAddonId:a.id,
+        isAddon:true,
+      });
+    });
+  }
   inv.updatedAt=Date.now();
   recomputeInvoiceTotal(inv);
   saveInvoiceObj(inv);
