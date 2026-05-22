@@ -3230,7 +3230,7 @@ function renderWimBundleChildren(){
         <span style="flex-shrink:0">子項目</span>
         <select onchange="setWimBundleChildSub('${w.id}',this.value)" onclick="event.preventDefault();event.stopPropagation()" style="flex:1;background:#fafafa;border:1px solid #d8d8d8;border-radius:4px;padding:3px 6px;font-size:.66rem;color:#1a1a1a;font-family:inherit;outline:none">
           <option value="" ${subPick===''?'selected':''}>— 用預設（$${fmtMoney(w.defaultPrice||0)}）—</option>
-          ${(w.subItems||[]).map(s=>`<option value="${escAttr(s.id)}" ${subPick===s.id?'selected':''}>${escHtml(s.label)} — $${fmtMoney(s.price||0)}</option>`).join('')}
+          ${(w.subItems||[]).map(s=>{const q=s.qty==null?1:s.qty;return `<option value="${escAttr(s.id)}" ${subPick===s.id?'selected':''}>${escHtml(s.label)}${q>1?` ×${q}`:''} — $${fmtMoney((s.price||0)*q)}</option>`;}).join('')}
         </select>
       </div>`:'';
     return `<label class="wim-bundle-row${checked?' checked':''}" style="${hasSubs&&checked?'grid-template-columns:22px 1fr 100px 80px;flex-direction:column;align-items:stretch':''}">
@@ -3256,14 +3256,15 @@ function setWimBundleChildSub(wid,subId){
 function renderWimSubItems(){
   const el=document.getElementById('wim-subitems');
   if(!_wimSubs.length){el.innerHTML='<div class="sublist-empty">未設定子項目（可選）</div>';return;}
-  el.innerHTML=_wimSubs.map((s,i)=>`<div class="sub-row">
+  el.innerHTML=_wimSubs.map((s,i)=>`<div class="sub-row" style="display:grid;grid-template-columns:1fr 90px 60px 24px;gap:5px;align-items:center">
     <input type="text" placeholder="子項目名稱（例：1 軌）" value="${escHtml(s.label)}" oninput="_wimSubs[${i}].label=this.value">
-    <input type="number" class="amt" placeholder="金額" value="${s.price||0}" oninput="_wimSubs[${i}].price=parseInt(this.value)||0">
+    <input type="number" class="amt" placeholder="單價" value="${s.price||0}" oninput="_wimSubs[${i}].price=parseInt(this.value)||0">
+    <input type="number" class="amt" placeholder="數量" min="1" value="${s.qty==null?1:s.qty}" oninput="_wimSubs[${i}].qty=Math.max(1,parseInt(this.value)||1)" title="預設數量">
     <button class="x-btn" onclick="removeSubItemRow(${i})" title="刪除">✕</button>
   </div>`).join('');
 }
 function addSubItemRow(){
-  _wimSubs.push({id:uid(),label:'',price:0});
+  _wimSubs.push({id:uid(),label:'',price:0,qty:1});
   renderWimSubItems();
 }
 function removeSubItemRow(i){_wimSubs.splice(i,1);renderWimSubItems();}
@@ -3328,7 +3329,7 @@ function saveWorkItem(){
   if(!label){toast(_wimIsBundle?'請填寫 Bundle 名稱':'請填寫項目名稱',true);return;}
   if(_wimIsBundle&&_wimChildIds.size===0){toast('Bundle 至少要包含一個工作項目',true);return;}
   // Sub-items only for non-bundle (variants); addons supported for both
-  const subs=_wimIsBundle?[]:_wimSubs.filter(s=>s.label&&s.label.trim()).map(s=>({id:s.id||uid(),label:s.label.trim(),price:parseInt(s.price)||0}));
+  const subs=_wimIsBundle?[]:_wimSubs.filter(s=>s.label&&s.label.trim()).map(s=>({id:s.id||uid(),label:s.label.trim(),price:parseInt(s.price)||0,qty:Math.max(1,parseInt(s.qty)||1)}));
   const adds=_wimAddons.filter(a=>a.label&&a.label.trim()).map(a=>({id:a.id||uid(),label:a.label.trim(),amount:parseInt(a.amount)||0}));
   const id=S.editWorkItemId||uid();
   saveWorkItemObj({
@@ -3920,7 +3921,10 @@ function onQiFromMasterChange(){
       const childItems=(w.bundleChildIds||[]).map(cid=>{
         const ci=S.workItems[cid];if(!ci)return null;
         const sub=subMap[cid]?(ci.subItems||[]).find(s=>s.id===subMap[cid]):null;
-        return {label:sub?`${ci.label} — ${sub.label}`:ci.label, price:sub?(sub.price||0):(ci.defaultPrice||0)};
+        const qty=sub?(sub.qty==null?1:sub.qty):1;
+        const unit=sub?(sub.price||0):(ci.defaultPrice||0);
+        const labelExtra=sub?` — ${sub.label}${qty>1?` ×${qty}`:''}`:'';
+        return {label:`${ci.label}${labelExtra}`, price:unit*qty};
       }).filter(Boolean);
       const sumChild=childItems.reduce((s,x)=>s+(x.price||0),0);
       const saving=sumChild-w.defaultPrice;
@@ -3959,8 +3963,10 @@ function renderQiSubOptions(w){
   const el=document.getElementById('qi-sub-options');
   el.innerHTML=w.subItems.map(s=>{
     const sel=_qiSelectedSubId===s.id?' selected':'';
+    const qty=s.qty==null?1:s.qty;
+    const qtyHtml=qty>1?` <span style="font-size:.66rem;color:#888">×${qty}</span>`:'';
     return`<div class="qi-sub-opt${sel}" onclick="selectQiSub('${w.id}','${s.id}')">
-      <span class="lab">${escHtml(s.label)}</span>
+      <span class="lab">${escHtml(s.label)}${qtyHtml}</span>
       <span class="price">$${fmtMoney(s.price)}</span>
     </div>`;
   }).join('');
@@ -3969,9 +3975,11 @@ function selectQiSub(wid,sid){
   const w=S.workItems[wid];if(!w)return;
   const s=w.subItems.find(x=>x.id===sid);if(!s)return;
   _qiSelectedSubId=sid;
-  // override label + price with sub-item
+  // override label + price + qty with sub-item
   document.getElementById('qi-label').value=`${w.label} - ${s.label}`;
   document.getElementById('qi-price').value=s.price||0;
+  const qtyEl=document.getElementById('qi-qty');
+  if(qtyEl)qtyEl.value=s.qty==null?1:s.qty;
   renderQiSubOptions(w);
 }
 function renderQiAddons(w){
@@ -6425,21 +6433,25 @@ function buildPdfTemplateD(client){
               const ci=S.workItems[cid];if(!ci)return null;
               const subId=subMap[cid];
               const sub=subId?(ci.subItems||[]).find(s=>s.id===subId):null;
+              const qty=sub?(sub.qty==null?1:sub.qty):1;
+              const unitPrice=sub?(sub.price||0):(ci.defaultPrice||0);
               return {
                 label:sub?`${ci.label} — ${sub.label}`:ci.label,
-                price:sub?(sub.price||0):(ci.defaultPrice||0),
+                unitPrice,
+                qty,
+                lineTotal:unitPrice*qty,
                 unit:ci.unit||'',
               };
             }).filter(Boolean);
             html+=childResolved.map(ci=>`<tr class="bundle-info-child">
               <td>▸ ${escHtml(ci.label)}</td>
-              <td class="right">$${fmtMoney(ci.price)}</td>
-              <td class="right">1</td>
+              <td class="right">$${fmtMoney(ci.unitPrice)}</td>
+              <td class="right">${ci.qty}</td>
               <td class="right">${escHtml(ci.unit||'—')}</td>
               <td></td>
             </tr>`).join('');
-            // Bundle 優惠 line at the bottom (sum of children - bundle's price), only if > 0
-            const sumChildren=childResolved.reduce((s,ci)=>s+(ci.price||0),0);
+            // Bundle 優惠 line at the bottom (sum of children × qty - bundle's price)
+            const sumChildren=childResolved.reduce((s,ci)=>s+(ci.lineTotal||0),0);
             const bundleSaving=sumChildren-(bw.defaultPrice||0);
             if(bundleSaving>0){
               html+=`<tr class="bundle-info-saving">
