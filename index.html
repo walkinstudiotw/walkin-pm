@@ -3221,7 +3221,19 @@ function renderWimBundleChildren(){
     el.innerHTML='<div style="padding:14px;text-align:center;color:#666;font-size:.72rem">沒有可選的工作項目（先建立一些非 Bundle 的項目）</div>';
     return;
   }
-  el.innerHTML=candidates.map(w=>{
+  // Group by category, sort categories alphabetically, items within group sort by label
+  const groups=new Map();
+  candidates.forEach(w=>{
+    const cat=(w.category||'').trim()||'未分類';
+    if(!groups.has(cat))groups.set(cat,[]);
+    groups.get(cat).push(w);
+  });
+  const sortedCats=[...groups.keys()].sort((a,b)=>a.localeCompare(b,'zh-TW'));
+  // Render: category header + items inside
+  el.innerHTML=sortedCats.map(cat=>{
+    const items=groups.get(cat).sort((a,b)=>(a.label||'').localeCompare(b.label||'','zh-TW',{numeric:true}));
+    const header=`<div style="font-size:.6rem;color:#5a3d80;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:8px 8px 4px;background:#ede0fc;border-bottom:1px solid #d8c8eb">${escHtml(cat)}</div>`;
+    return header+items.map(w=>{
     const checked=_wimChildIds.has(w.id);
     const subPick=_wimChildSubItems.get(w.id)||'';
     const hasSubs=(w.subItems||[]).length>0;
@@ -3242,6 +3254,7 @@ function renderWimBundleChildren(){
       </div>
       ${subPickerHtml}
     </label>`;
+  }).join('');
   }).join('');
 }
 function toggleWimBundleChild(wid,checked){
