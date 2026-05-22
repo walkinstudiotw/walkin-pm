@@ -3193,6 +3193,7 @@ function confirmPendingWorkItem(id){
 let _wimSubs=[];
 let _wimAddons=[];
 let _wimChildIds=new Set();        // bundle children (work item ids)
+let _wimChildSubItems=new Map();   // { workItemId → subItemId } — optional variant per bundle child
 let _wimIsBundle=false;
 function onWimBundleToggle(){
   _wimIsBundle=document.getElementById('wim-isbundle').checked;
@@ -3222,19 +3223,35 @@ function renderWimBundleChildren(){
   }
   el.innerHTML=candidates.map(w=>{
     const checked=_wimChildIds.has(w.id);
-    return `<label class="wim-bundle-row${checked?' checked':''}">
-      <input type="checkbox" ${checked?'checked':''} onchange="toggleWimBundleChild('${w.id}',this.checked)" style="accent-color:#c084fc">
-      <span class="lab">${escHtml(w.label)}</span>
-      <span class="cat">${escHtml(w.category||'未分類')}</span>
-      <span class="price">$${fmtMoney(w.defaultPrice)}</span>
+    const subPick=_wimChildSubItems.get(w.id)||'';
+    const hasSubs=(w.subItems||[]).length>0;
+    const subPickerHtml=(checked&&hasSubs)?`
+      <div style="grid-column:1/-1;display:flex;align-items:center;gap:6px;margin-top:4px;margin-left:30px;font-size:.66rem;color:#666">
+        <span style="flex-shrink:0">子項目</span>
+        <select onchange="setWimBundleChildSub('${w.id}',this.value)" onclick="event.preventDefault();event.stopPropagation()" style="flex:1;background:#fafafa;border:1px solid #d8d8d8;border-radius:4px;padding:3px 6px;font-size:.66rem;color:#1a1a1a;font-family:inherit;outline:none">
+          <option value="" ${subPick===''?'selected':''}>— 用預設（$${fmtMoney(w.defaultPrice||0)}）—</option>
+          ${(w.subItems||[]).map(s=>`<option value="${escAttr(s.id)}" ${subPick===s.id?'selected':''}>${escHtml(s.label)} — $${fmtMoney(s.price||0)}</option>`).join('')}
+        </select>
+      </div>`:'';
+    return `<label class="wim-bundle-row${checked?' checked':''}" style="${hasSubs&&checked?'grid-template-columns:22px 1fr 100px 80px;flex-direction:column;align-items:stretch':''}">
+      <div style="display:grid;grid-template-columns:22px 1fr 100px 80px;gap:6px;align-items:center;width:100%">
+        <input type="checkbox" ${checked?'checked':''} onchange="toggleWimBundleChild('${w.id}',this.checked)" style="accent-color:#c084fc">
+        <span class="lab">${escHtml(w.label)}${hasSubs?` <span style="font-size:.6rem;color:#888">(有 ${w.subItems.length} 子項目)</span>`:''}</span>
+        <span class="cat">${escHtml(w.category||'未分類')}</span>
+        <span class="price">$${fmtMoney(w.defaultPrice)}</span>
+      </div>
+      ${subPickerHtml}
     </label>`;
   }).join('');
 }
 function toggleWimBundleChild(wid,checked){
-  if(checked)_wimChildIds.add(wid);else _wimChildIds.delete(wid);
-  // re-render the row to reflect checked state
-  const row=document.querySelector(`#wim-bundle-children input[onchange*="${wid}"]`)?.closest('.wim-bundle-row');
-  if(row)row.classList.toggle('checked',checked);
+  if(checked)_wimChildIds.add(wid);
+  else {_wimChildIds.delete(wid);_wimChildSubItems.delete(wid);}
+  renderWimBundleChildren();  // full re-render so sub-item picker shows/hides
+}
+function setWimBundleChildSub(wid,subId){
+  if(subId)_wimChildSubItems.set(wid,subId);
+  else _wimChildSubItems.delete(wid);
 }
 function renderWimSubItems(){
   const el=document.getElementById('wim-subitems');
@@ -3277,6 +3294,7 @@ function openAddWorkItem(){
   document.getElementById('wim-unit').value='';
   _wimSubs=[];_wimAddons=[];
   _wimChildIds=new Set();
+  _wimChildSubItems=new Map();
   _wimIsBundle=false;
   document.getElementById('wim-isbundle').checked=false;
   applyWimBundleVisibility();
@@ -3297,6 +3315,7 @@ function openEditWorkItem(id){
   _wimSubs=JSON.parse(JSON.stringify(w.subItems||[]));
   _wimAddons=JSON.parse(JSON.stringify(w.addons||[]));
   _wimChildIds=new Set(w.bundleChildIds||[]);
+  _wimChildSubItems=new Map(Object.entries(w.bundleChildSubItems||{}));
   _wimIsBundle=!!w.isBundle;
   document.getElementById('wim-isbundle').checked=_wimIsBundle;
   applyWimBundleVisibility();
@@ -3321,6 +3340,7 @@ function saveWorkItem(){
     addons:adds,
     isBundle:_wimIsBundle,
     bundleChildIds:_wimIsBundle?[..._wimChildIds]:[],
+    bundleChildSubItems:_wimIsBundle?Object.fromEntries(_wimChildSubItems):{},
   });
   closeM('workitem-modal');
   toast(S.editWorkItemId?'已更新':'已新增至工作項目庫');
@@ -3896,15 +3916,20 @@ function onQiFromMasterChange(){
       addSec.style.display='none';
     }
     if(bundleSec){
-      const childItems=(w.bundleChildIds||[]).map(cid=>S.workItems[cid]).filter(Boolean);
-      const sumChild=childItems.reduce((s,x)=>s+(x.defaultPrice||0),0);
+      const subMap=w.bundleChildSubItems||{};
+      const childItems=(w.bundleChildIds||[]).map(cid=>{
+        const ci=S.workItems[cid];if(!ci)return null;
+        const sub=subMap[cid]?(ci.subItems||[]).find(s=>s.id===subMap[cid]):null;
+        return {label:sub?`${ci.label} — ${sub.label}`:ci.label, price:sub?(sub.price||0):(ci.defaultPrice||0)};
+      }).filter(Boolean);
+      const sumChild=childItems.reduce((s,x)=>s+(x.price||0),0);
       const saving=sumChild-w.defaultPrice;
       bundleSec.style.display='flex';
       bundleSec.innerHTML=`<div class="sec-title">📦 此 Bundle 包含 ${childItems.length} 個工作項目</div>
         <div style="display:flex;flex-direction:column;gap:3px;font-size:.74rem">
           ${childItems.map(ci=>`<div style="display:flex;justify-content:space-between;color:#666666;padding:3px 8px;background:#f5f0fa;border-radius:4px">
             <span>${escHtml(ci.label)}</span>
-            <span style="color:#1e6038;font-family:'JetBrains Mono',monospace">$${fmtMoney(ci.defaultPrice||0)}</span>
+            <span style="color:#1e6038;font-family:'JetBrains Mono',monospace">$${fmtMoney(ci.price)}</span>
           </div>`).join('')}
         </div>
         <div style="display:flex;justify-content:space-between;font-size:.7rem;padding:4px 8px;color:#888">
@@ -6394,16 +6419,27 @@ function buildPdfTemplateD(client){
         // If this is a bundle row, append child preview rows (info-only: 單價/數量/單位, no subtotal)
         if(it.bundleSourceId&&bw?.isBundle){
           if(bw.bundleChildIds?.length){
-            const childWorkItems=bw.bundleChildIds.map(cid=>S.workItems[cid]).filter(Boolean);
-            html+=childWorkItems.map(ci=>`<tr class="bundle-info-child">
+            const subMap=bw.bundleChildSubItems||{};
+            // For each child, resolve display label + effective price (sub-item if chosen, else default)
+            const childResolved=bw.bundleChildIds.map(cid=>{
+              const ci=S.workItems[cid];if(!ci)return null;
+              const subId=subMap[cid];
+              const sub=subId?(ci.subItems||[]).find(s=>s.id===subId):null;
+              return {
+                label:sub?`${ci.label} — ${sub.label}`:ci.label,
+                price:sub?(sub.price||0):(ci.defaultPrice||0),
+                unit:ci.unit||'',
+              };
+            }).filter(Boolean);
+            html+=childResolved.map(ci=>`<tr class="bundle-info-child">
               <td>▸ ${escHtml(ci.label)}</td>
-              <td class="right">$${fmtMoney(ci.defaultPrice||0)}</td>
+              <td class="right">$${fmtMoney(ci.price)}</td>
               <td class="right">1</td>
               <td class="right">${escHtml(ci.unit||'—')}</td>
               <td></td>
             </tr>`).join('');
             // Bundle 優惠 line at the bottom (sum of children - bundle's price), only if > 0
-            const sumChildren=childWorkItems.reduce((s,ci)=>s+(ci.defaultPrice||0),0);
+            const sumChildren=childResolved.reduce((s,ci)=>s+(ci.price||0),0);
             const bundleSaving=sumChildren-(bw.defaultPrice||0);
             if(bundleSaving>0){
               html+=`<tr class="bundle-info-saving">
