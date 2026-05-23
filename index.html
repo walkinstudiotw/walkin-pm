@@ -6124,9 +6124,11 @@ async function sendInvoiceViaWebhook(){
     const base64=dataUrl.split(',')[1];
     const subjectPrefix=isSelfFallback?'[自寄留底] ':'';
     const bodyPrefix=isSelfFallback?`⚠️ 此封是「客戶未設 Email」自動寄到工作室留底。\n客戶：${client.name}（contactName: ${client.contactName||'(無)'}）\n請手動轉寄或補填客戶 Email 後重寄。\n\n────────────────\n\n`:'';
+    // CC studio email (walkinstudiotw@gmail.com) for自留底；自寄留底時略過避免雙份
+    const ccEmail=studioEmail||'walkinstudiotw@gmail.com';
     const payload={
       to,
-      cc:isSelfFallback?'':'housecoworking.co@gmail.com',  // 自寄留底時不 cc，避免雙份
+      cc:isSelfFallback?'':ccEmail,
       subject:`${subjectPrefix}Invoice ${inv.invoiceNumber} · ${client.name}`,
       body:`${bodyPrefix}Hi ${client.contactName||client.name}，\n\n附上 ${inv.billingMonth} 的請款明細，總額 $${fmtMoney(inv.total)}，付款期限 ${inv.dueDate}。\n如有問題請聯繫。\n\n——\nWalkIn Studio`,
       pdfBase64:base64,
