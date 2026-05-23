@@ -5942,7 +5942,8 @@ function saveInvoiceItemFromModal(){
   const wid=document.getElementById('ii-from-master').value;
   const w=wid?S.workItems[wid]:null;
   inv.items=inv.items||[];
-  // Push the main item
+  // Push the main item — tag bundleSourceId when source is a Bundle so renderer
+  // expands children inline (matches quote behaviour)
   inv.items.push({
     itemId:uid(),
     label,
@@ -5953,6 +5954,7 @@ function saveInvoiceItemFromModal(){
     unit:document.getElementById('ii-unit').value.trim()||'集',
     sourceWorkItemId:wid||null,
     sourceSubItemId:_iiSelectedSubId||null,
+    bundleSourceId:(w&&w.isBundle)?wid:null,
   });
   // Push selected addons as separate invoice lines
   if(w&&_iiSelectedAddonIds.size){
@@ -6159,7 +6161,11 @@ function buildInvoicePdfHtml(inv,client){
     :items.map(it=>{
       const qty=it.qty==null?1:it.qty;
       const sub=(it.defaultPrice||0)*qty;
-      return `<tr>
+      // Resolve bundle source: prefer explicit bundleSourceId, else fall back
+      // to sourceWorkItemId pointing at a bundle (covers month-end generated invoices)
+      const bwId=it.bundleSourceId||(it.sourceWorkItemId&&S.workItems[it.sourceWorkItemId]?.isBundle?it.sourceWorkItemId:null);
+      const bw=bwId?S.workItems[bwId]:null;
+      let html=`<tr>
         <td>${escHtml(it.serviceLabel||'—')}</td>
         <td>${escHtml(it.label)}</td>
         <td class="right">$${fmtMoney(it.defaultPrice)}</td>
@@ -6167,6 +6173,39 @@ function buildInvoicePdfHtml(inv,client){
         <td class="right" style="color:#666">${escHtml(it.unit||'—')}</td>
         <td class="right">$${fmtMoney(sub)}</td>
       </tr>`;
+      // Bundle row → append child preview rows (info-only, no subtotal column)
+      if(bw?.isBundle&&bw.bundleChildIds?.length){
+        const subMap=bw.bundleChildSubItems||{};
+        const childResolved=bw.bundleChildIds.map(cid=>{
+          const ci=S.workItems[cid];if(!ci)return null;
+          const subId=subMap[cid];
+          const sub=subId?(ci.subItems||[]).find(s=>s.id===subId):null;
+          const price=sub?(sub.price||0):(ci.defaultPrice||0);
+          const unit=(sub&&sub.unit)?sub.unit:(ci.unit||'');
+          const sLabel=sub?((sub.label||'').trim()):'';
+          return {
+            label:sub?(sLabel?`${ci.label} — ${sLabel}`:ci.label):ci.label,
+            price,unit,
+          };
+        }).filter(Boolean);
+        html+=childResolved.map(ci=>`<tr class="bundle-info-child">
+          <td></td>
+          <td>▸ ${escHtml(ci.label)}</td>
+          <td class="right">$${fmtMoney(ci.price)}</td>
+          <td class="right">1</td>
+          <td class="right">${escHtml(ci.unit||'—')}</td>
+          <td></td>
+        </tr>`).join('');
+        const sumChildren=childResolved.reduce((s,ci)=>s+(ci.price||0),0);
+        const bundleSaving=sumChildren-(bw.defaultPrice||0);
+        if(bundleSaving>0){
+          html+=`<tr class="bundle-info-saving">
+            <td colspan="5" class="right">Bundle 優惠</td>
+            <td class="right">-$${fmtMoney(bundleSaving)}</td>
+          </tr>`;
+        }
+      }
+      return html;
     }).join('');
   const totalsHtml=`<div class="qpdf-d-totals"><div class="qpdf-d-totals-box">
     <div class="qpdf-d-totals-row"><span class="lbl">Subtotal</span><span class="val">$${fmtMoney(t.subtotal)}</span></div>
