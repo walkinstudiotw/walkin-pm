@@ -6162,8 +6162,9 @@ function buildInvoicePdfHtml(inv,client){
       const qty=it.qty==null?1:it.qty;
       const sub=(it.defaultPrice||0)*qty;
       // Resolve bundle source: prefer explicit bundleSourceId, else fall back
-      // to sourceWorkItemId pointing at a bundle (covers month-end generated invoices)
-      const bwId=it.bundleSourceId||(it.sourceWorkItemId&&S.workItems[it.sourceWorkItemId]?.isBundle?it.sourceWorkItemId:null);
+      // to sourceWorkItemId pointing at a bundle (covers month-end generated invoices).
+      // Addons themselves are children of the bundle line — never expand again.
+      const bwId=it.isAddon?null:(it.bundleSourceId||(it.sourceWorkItemId&&S.workItems[it.sourceWorkItemId]?.isBundle?it.sourceWorkItemId:null));
       const bw=bwId?S.workItems[bwId]:null;
       let html=`<tr>
         <td>${escHtml(it.serviceLabel||'—')}</td>
