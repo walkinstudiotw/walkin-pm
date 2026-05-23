@@ -1608,6 +1608,9 @@ select.form-select:focus{border-color:#666666}
       </div>
     </div>
 
+    <!-- Bundle children preview (visible when master is a Bundle) -->
+    <div class="form-group full" id="ii-bundle-preview" style="display:none;background:#f3e8fc;border:1px dashed #c0a0d8;border-radius:7px;padding:10px 12px;flex-direction:column;gap:6px"></div>
+
     <!-- Sub-items picker (only shown when master has subItems) -->
     <div class="form-group full" id="ii-sub-section" style="display:none">
       <label class="form-label">📦 選擇子項目</label>
@@ -5825,8 +5828,10 @@ function setIiMaster(wid,label){
   _iiSelectedSubId=null;_iiSelectedAddonIds=new Set();
   const subSec=document.getElementById('ii-sub-section');
   const addSec=document.getElementById('ii-addon-section');
+  const bundleSec=document.getElementById('ii-bundle-preview');
   if(subSec)subSec.style.display='none';
   if(addSec)addSec.style.display='none';
+  if(bundleSec)bundleSec.style.display='none';
   // Auto-fill: workItem.label → 服務項目, leave 內容 for user to fill
   if(wid){
     const w=S.workItems[wid];
@@ -5835,18 +5840,57 @@ function setIiMaster(wid,label){
       document.getElementById('ii-category').value=w.category||'';
       document.getElementById('ii-price').value=w.defaultPrice||'';
       document.getElementById('ii-unit').value=w.unit||'集';
-      // Show sub-items section if any
-      if((w.subItems||[]).length){
-        if(subSec)subSec.style.display='block';
-        renderIiSubOptions(w);
-      }
-      // Show addons section if any
-      if((w.addons||[]).length){
-        if(addSec)addSec.style.display='block';
-        renderIiAddons(w);
+      if(w.isBundle){
+        // Bundle: show child preview, hide sub-items (bundles have none), keep addons
+        if(bundleSec)renderIiBundlePreview(w);
+        if((w.addons||[]).length){
+          if(addSec)addSec.style.display='block';
+          renderIiAddons(w);
+        }
+      }else{
+        // Show sub-items section if any
+        if((w.subItems||[]).length){
+          if(subSec)subSec.style.display='block';
+          renderIiSubOptions(w);
+        }
+        // Show addons section if any
+        if((w.addons||[]).length){
+          if(addSec)addSec.style.display='block';
+          renderIiAddons(w);
+        }
       }
     }
   }
+}
+function renderIiBundlePreview(w){
+  const el=document.getElementById('ii-bundle-preview');
+  if(!el)return;
+  const subMap=w.bundleChildSubItems||{};
+  const childItems=(w.bundleChildIds||[]).map(cid=>{
+    const ci=S.workItems[cid];if(!ci)return null;
+    const sub=subMap[cid]?(ci.subItems||[]).find(s=>s.id===subMap[cid]):null;
+    const price=sub?(sub.price||0):(ci.defaultPrice||0);
+    const unit=(sub&&sub.unit)?sub.unit:(ci.unit||'');
+    const sLabel=sub?((sub.label||'').trim()):'';
+    const labelExtra=sub?(sLabel?` — ${sLabel}`:'')+(unit?` / ${unit}`:''):'';
+    return {label:`${ci.label}${labelExtra}`, price};
+  }).filter(Boolean);
+  const sumChild=childItems.reduce((s,x)=>s+(x.price||0),0);
+  const saving=sumChild-(w.defaultPrice||0);
+  el.style.display='flex';
+  el.innerHTML=`<div class="sec-title" style="font-size:.74rem;color:#7a4d9a;font-weight:700">📦 此 Bundle 包含 ${childItems.length} 個工作項目</div>
+    <div style="display:flex;flex-direction:column;gap:3px;font-size:.74rem">
+      ${childItems.map(ci=>`<div style="display:flex;justify-content:space-between;color:#666666;padding:3px 8px;background:#f5f0fa;border-radius:4px">
+        <span>${escHtml(ci.label)}</span>
+        <span style="color:#1e6038;font-family:'JetBrains Mono',monospace">$${fmtMoney(ci.price)}</span>
+      </div>`).join('')}
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:.7rem;padding:4px 8px;color:#888">
+      <span>原價總和</span><span style="font-family:'JetBrains Mono',monospace">$${fmtMoney(sumChild)}</span>
+    </div>
+    ${saving>0?`<div style="display:flex;justify-content:space-between;font-size:.72rem;padding:4px 8px;color:#c084fc;font-weight:700">
+      <span>Bundle 優惠</span><span style="font-family:'JetBrains Mono',monospace">-$${fmtMoney(saving)}</span>
+    </div>`:''}`;
 }
 function renderIiSubOptions(w){
   const el=document.getElementById('ii-sub-options');
