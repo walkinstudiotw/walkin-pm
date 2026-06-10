@@ -168,7 +168,7 @@ body{display:flex;flex-direction:column}
 .cash-row.expanded .chev{transform:rotate(90deg)}
 .cash-row-detail{display:none;padding:8px 14px 14px;border-top:1px dashed #e0e0e0;background:#fafafa}
 .cash-row.expanded .cash-row-detail{display:block}
-.cash-line{display:grid;grid-template-columns:1fr 70px 50px 80px 80px 80px 80px;gap:8px;align-items:center;padding:6px 4px;border-bottom:1px solid #ececec;font-size:.7rem}
+.cash-line{display:grid;grid-template-columns:1fr 70px 50px 80px 80px 80px 80px 28px;gap:8px;align-items:center;padding:6px 4px;border-bottom:1px solid #ececec;font-size:.7rem}
 .cash-line:last-child{border-bottom:none}
 .cash-line .lab{color:#1a1a1a}
 .cash-line .who{font-size:.66rem;color:#888}
@@ -178,7 +178,7 @@ body{display:flex;flex-direction:column}
 .cash-line .num.split-w{color:#a86a00;font-weight:700}
 .cash-line .num.split-s{color:#a08560;font-weight:700}
 .cash-line-hdr{font-size:.6rem;color:#888;text-transform:uppercase;letter-spacing:.4px;padding:4px 4px 4px;font-weight:700}
-.cash-totals{margin-top:8px;padding:8px 4px;display:grid;grid-template-columns:1fr 70px 50px 80px 80px 80px 80px;gap:8px;border-top:2px solid #d8d8d8;font-size:.74rem;font-weight:700}
+.cash-totals{margin-top:8px;padding:8px 4px;display:grid;grid-template-columns:1fr 70px 50px 80px 80px 80px 80px 28px;gap:8px;border-top:2px solid #d8d8d8;font-size:.74rem;font-weight:700}
 .cash-totals .num{font-family:'JetBrains Mono',monospace;text-align:right}
 .cash-status-toggle{display:flex;gap:0;border:1px solid #d8d8d8;border-radius:6px;overflow:hidden}
 .cash-status-toggle button{flex:1;padding:3px 8px;font-size:.64rem;background:#ffffff;border:none;cursor:pointer;color:#666;font-family:inherit;font-weight:700;border-right:1px solid #d8d8d8}
@@ -1626,6 +1626,47 @@ select.form-select:focus{border-color:#666666}
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeM('invoice-item-modal')">取消</button>
       <button class="btn-primary" onclick="saveInvoiceItemFromModal()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- CASHFLOW ITEM EDIT MODAL — per-invoice-line 負責/外包/分潤 override -->
+<div class="modal-overlay" id="cash-item-edit-modal">
+  <div class="modal">
+    <div class="modal-title">✎ 編輯分潤設定</div>
+    <p style="font-size:.74rem;color:#888;margin:0 0 12px;line-height:1.5" id="cit-target">—</p>
+    <input type="hidden" id="cit-inv-id" value="">
+    <input type="hidden" id="cit-item-idx" value="">
+    <div class="form-row-3">
+      <div class="form-group">
+        <label class="form-label">負責</label>
+        <select class="form-select" id="cit-labor">
+          <option value="">（依案件預設）</option>
+          <option value="齊">齊</option>
+          <option value="巫">巫</option>
+          <option value="工作室">工作室</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">外包成本（元）</label>
+        <input class="form-input" id="cit-cost" type="number" inputmode="numeric" placeholder="（依案件預設）">
+      </div>
+      <div class="form-group">
+        <label class="form-label">與工作室分潤</label>
+        <select class="form-select" id="cit-share">
+          <option value="">（依案件預設）</option>
+          <option value="yes">是 · 70/30</option>
+          <option value="no">否 · 100% 給負責人</option>
+        </select>
+      </div>
+    </div>
+    <p style="font-size:.66rem;color:#a86a00;margin:6px 0 0;line-height:1.4">提示：空白＝沿用案件預設值；填入＝這張 invoice line 專屬覆寫。手動項目（無關聯案件）一定要設「負責」才會分潤到人。</p>
+    <div class="modal-btns" style="justify-content:space-between">
+      <button class="btn-cancel" onclick="clearCashItemOverride()" style="color:#c53030">清除覆寫</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn-cancel" onclick="closeM('cash-item-edit-modal')">取消</button>
+        <button class="btn-primary" onclick="saveCashItemEdit()">儲存</button>
+      </div>
     </div>
   </div>
 </div>
@@ -6449,10 +6490,16 @@ function computeInvoiceSplit(inv){
   const lines=items.map(it=>{
     const sub=(it.defaultPrice||0)*(it.qty==null?1:it.qty);
     const cs=it.sourceCaseId?S.cases[it.sourceCaseId]:null;
-    const cost=cs?(cs.isOutsourced?computeOutsourceCost(cs):(cs.cost||0)):0;
-    const labor=cs?(cs.laborOwner||'齊'):'?';
-    // shareWithStudio: default true if undefined, only false when explicitly opted out
-    const shareStudio=cs?(cs.shareWithStudio!==false):true;
+    // Per-item overrides win over the source case (so manual items can have 負責/外包/分潤 set
+    // without a sourceCase, and case-sourced items can still be overridden per invoice line)
+    const cost=(it.cost!=null)
+      ?(parseInt(it.cost)||0)
+      :(cs?(cs.isOutsourced?computeOutsourceCost(cs):(cs.cost||0)):0);
+    const labor=it.laborOwner||(cs?(cs.laborOwner||'齊'):'?');
+    // shareWithStudio: item field wins; else case; else default true
+    const shareStudio=(it.shareWithStudio!=null)
+      ?!!it.shareWithStudio
+      :(cs?(cs.shareWithStudio!==false):true);
     const net=Math.max(0,sub-cost);
     let qiCut=0,wuCut=0,studioCut=0;
     if(shareStudio){
@@ -6476,6 +6523,50 @@ function computeInvoiceSplit(inv){
     return acc;
   },{sub:0,cost:0,net:0,qi:0,wu:0,studio:0});
   return {lines,totals};
+}
+
+// ── PER-LINE OVERRIDE (cashflow) — 負責 / 外包成本 / 分潤 ──
+function openCashItemEdit(invId,idx){
+  const inv=S.invoices[invId];if(!inv)return;
+  const it=inv.items?.[idx];if(!it)return;
+  document.getElementById('cit-inv-id').value=invId;
+  document.getElementById('cit-item-idx').value=String(idx);
+  // Build a helpful context line
+  const cs=it.sourceCaseId?S.cases[it.sourceCaseId]:null;
+  const src=cs?`案件「${cs.title||''}」`:'手動項目（無關聯案件）';
+  document.getElementById('cit-target').textContent=`「${it.label||''}」· ${src}`;
+  // Populate current values (empty = inherit)
+  document.getElementById('cit-labor').value=it.laborOwner||'';
+  document.getElementById('cit-cost').value=it.cost!=null?it.cost:'';
+  document.getElementById('cit-share').value=it.shareWithStudio==null?'':(it.shareWithStudio?'yes':'no');
+  openM('cash-item-edit-modal');
+}
+function saveCashItemEdit(){
+  const invId=document.getElementById('cit-inv-id').value;
+  const idx=parseInt(document.getElementById('cit-item-idx').value);
+  const inv=S.invoices[invId];if(!inv){closeM('cash-item-edit-modal');return;}
+  const it=inv.items?.[idx];if(!it){closeM('cash-item-edit-modal');return;}
+  const labor=document.getElementById('cit-labor').value.trim();
+  const costRaw=document.getElementById('cit-cost').value.trim();
+  const share=document.getElementById('cit-share').value;
+  // Empty input → delete the override so we fall back to case defaults
+  if(labor)it.laborOwner=labor;else delete it.laborOwner;
+  if(costRaw!=='')it.cost=parseInt(costRaw)||0;else delete it.cost;
+  if(share==='yes')it.shareWithStudio=true;
+  else if(share==='no')it.shareWithStudio=false;
+  else delete it.shareWithStudio;
+  inv.updatedAt=Date.now();
+  saveInvoiceObj(inv);
+  closeM('cash-item-edit-modal');
+  renderCashflow();
+  toast('已更新分潤設定');
+}
+function clearCashItemOverride(){
+  // Wipe all 3 overrides for this line and save
+  document.getElementById('cit-labor').value='';
+  document.getElementById('cit-cost').value='';
+  document.getElementById('cit-share').value='';
+  saveCashItemEdit();
 }
 
 function renderCashflow(){
@@ -6555,9 +6646,12 @@ function renderCashflow(){
     const cName=c?c.name:'(客戶已刪除)';
     const split=computeInvoiceSplit(inv);
     const isExpanded=S.cashFilter.expandedIds.has(inv.id);
-    const linesHtml=split.lines.map(l=>{
+    const linesHtml=split.lines.map((l,idx)=>{
       const csTitle=l.cs?escHtml(l.cs.title||''):'<span class="cash-no-case">手動項目</span>';
       const ssMark=l.shareStudio?'':'<span title="不與工作室分潤" style="color:#a86a00;font-size:.6rem;margin-left:4px">🚫🏠</span>';
+      // Highlight items whose overrides differ from source case (or that have no case)
+      const overridden=(l.it.laborOwner||l.it.cost!=null||l.it.shareWithStudio!=null);
+      const editBg=overridden?'background:#fff8ee':'';
       return `<div class="cash-line">
         <div class="lab">${escHtml(l.it.label||'')}<div class="who">${csTitle} · 負責: ${escHtml(l.labor)}${ssMark}</div></div>
         <div class="num">$${fmtMoney(l.sub)}</div>
@@ -6566,6 +6660,7 @@ function renderCashflow(){
         <div class="num split-q">${l.qiCut?'$'+fmtMoney(l.qiCut):'—'}</div>
         <div class="num split-w">${l.wuCut?'$'+fmtMoney(l.wuCut):'—'}</div>
         <div class="num split-s">${l.studioCut?'$'+fmtMoney(l.studioCut):'—'}</div>
+        <button class="act-btn" onclick="openCashItemEdit('${inv.id}',${idx})" title="編輯分潤設定" style="padding:2px 4px;${editBg}">✎</button>
       </div>`;
     }).join('');
     return `<div class="cash-row${isExpanded?' expanded':''}" data-id="${inv.id}">
@@ -6584,7 +6679,7 @@ function renderCashflow(){
       </div>
       <div class="cash-row-detail">
         <div class="cash-line cash-line-hdr">
-          <div>項目</div><div style="text-align:right">金額</div><div style="text-align:right">外包</div><div style="text-align:right">淨額</div><div style="text-align:right">齊</div><div style="text-align:right">巫</div><div style="text-align:right">工作室</div>
+          <div>項目</div><div style="text-align:right">金額</div><div style="text-align:right">外包</div><div style="text-align:right">淨額</div><div style="text-align:right">齊</div><div style="text-align:right">巫</div><div style="text-align:right">工作室</div><div></div>
         </div>
         ${linesHtml}
         <div class="cash-totals">
@@ -6595,6 +6690,7 @@ function renderCashflow(){
           <div class="num" style="color:#1e4a80">$${fmtMoney(split.totals.qi)}</div>
           <div class="num" style="color:#a86a00">$${fmtMoney(split.totals.wu)}</div>
           <div class="num" style="color:#a08560">$${fmtMoney(split.totals.studio)}</div>
+          <div></div>
         </div>
       </div>
     </div>`;
