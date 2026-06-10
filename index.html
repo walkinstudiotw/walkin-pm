@@ -5568,7 +5568,7 @@ function renderInvoiceEditor(){
     </div>
     <div style="display:flex;flex-direction:column;gap:5px">
       ${inv.items.length===0?'<div style="padding:14px;text-align:center;color:#666;font-size:.74rem;border:1px dashed #d8d8d8;border-radius:6px">尚無項目</div>':
-        `<div style="display:grid;grid-template-columns:24px 140px 1fr 70px 40px 50px 70px 22px;gap:5px;align-items:center;padding:3px 6px;font-size:.6rem;color:#666;letter-spacing:.4px;text-transform:uppercase">
+        `<div style="display:grid;grid-template-columns:24px 140px 1fr 70px 40px 50px 70px 44px;gap:5px;align-items:center;padding:3px 6px;font-size:.6rem;color:#666;letter-spacing:.4px;text-transform:uppercase">
           <div></div><div>服務項目</div><div>內容</div><div style="text-align:right">單價</div><div style="text-align:center">數量</div><div style="text-align:center">單位</div><div style="text-align:right">小計</div><div></div>
         </div>`+
         inv.items.map((it,idx)=>{
@@ -5576,18 +5576,26 @@ function renderInvoiceEditor(){
           const sub=(it.defaultPrice||0)*qty;
           const upDisabled=idx===0?'disabled style="opacity:.2;cursor:not-allowed"':'';
           const dnDisabled=idx===inv.items.length-1?'disabled style="opacity:.2;cursor:not-allowed"':'';
-          return `<div style="display:grid;grid-template-columns:24px 140px 1fr 70px 40px 50px 70px 22px;gap:5px;align-items:center;padding:5px 6px;background:#ffffff;border:1px solid #e8e8e8;border-radius:6px;font-size:.72rem">
+          // Addon rows: visually mark + subtle indent + amber subtotal
+          const isAddon=!!it.isAddon;
+          const rowBg=isAddon?'#fff8ee':'#ffffff';
+          const rowBorder=isAddon?'1px dashed #d8b878':'1px solid #e8e8e8';
+          const editTitle=isAddon?'編輯（會跳到對應主項目）':'編輯（含子項目／加減項）';
+          return `<div style="display:grid;grid-template-columns:24px 140px 1fr 70px 40px 50px 70px 44px;gap:5px;align-items:center;padding:5px 6px;background:${rowBg};border:${rowBorder};border-radius:6px;font-size:.72rem">
             <div class="inv-row-handle" style="display:flex;flex-direction:column;align-items:center;gap:1px">
               <button onclick="moveInvoiceItem(${idx},-1)" title="上移" ${upDisabled} style="background:none;border:none;color:#666;cursor:pointer;font-size:.6rem;padding:0;line-height:1;height:10px;width:18px">▲</button>
               <button onclick="moveInvoiceItem(${idx},1)" title="下移" ${dnDisabled} style="background:none;border:none;color:#666;cursor:pointer;font-size:.6rem;padding:0;line-height:1;height:10px;width:18px">▼</button>
             </div>
             <input type="text" value="${escHtml(it.serviceLabel||'')}" oninput="updateInvoiceItemField(${idx},'serviceLabel',this.value)" placeholder="服務項目" style="background:#f5f5f5;border:1px solid #d8d8d8;border-radius:4px;padding:3px 6px;color:#a08560;font-family:inherit;font-size:.7rem;outline:none">
-            <input type="text" value="${escHtml(it.label)}" oninput="updateInvoiceItemField(${idx},'label',this.value)" placeholder="內容（案件名稱）" style="background:#f5f5f5;border:1px solid #d8d8d8;border-radius:4px;padding:3px 6px;color:#1a1a1a;font-family:inherit;font-size:.72rem;outline:none">
+            <input type="text" value="${escHtml(it.label||'')}" oninput="updateInvoiceItemField(${idx},'label',this.value)" placeholder="內容（案件名稱）" style="background:#f5f5f5;border:1px solid #d8d8d8;border-radius:4px;padding:3px 6px;color:${isAddon?'#a86a00':'#1a1a1a'};font-family:inherit;font-size:.72rem;outline:none${isAddon?';font-style:italic':''}">
             <input type="number" value="${it.defaultPrice||0}" oninput="updateInvoiceItemField(${idx},'defaultPrice',parseInt(this.value)||0)" style="background:#f5f5f5;border:1px solid #d8d8d8;border-radius:4px;padding:3px 6px;color:#1e6038;font-family:'JetBrains Mono',monospace;font-size:.7rem;text-align:right;outline:none">
             <input type="number" value="${qty}" oninput="updateInvoiceItemField(${idx},'qty',parseInt(this.value)||0)" style="background:#f5f5f5;border:1px solid #d8d8d8;border-radius:4px;padding:3px 6px;color:#444444;font-family:'JetBrains Mono',monospace;font-size:.7rem;text-align:center;outline:none">
             <input type="text" value="${escHtml(it.unit||'')}" oninput="updateInvoiceItemField(${idx},'unit',this.value)" placeholder="單位" style="background:#f5f5f5;border:1px solid #d8d8d8;border-radius:4px;padding:3px 6px;color:#444444;font-family:inherit;font-size:.7rem;text-align:center;outline:none">
             <div style="text-align:right;color:#1e6038;font-family:'JetBrains Mono',monospace;font-size:.72rem">$${fmtMoney(sub)}</div>
-            <button class="act-btn del" onclick="delInvoiceItem(${idx})" title="刪除">✕</button>
+            <div style="display:flex;gap:2px;justify-content:center">
+              <button class="act-btn" onclick="openEditInvoiceItem(${idx})" title="${editTitle}" style="padding:2px 4px">✎</button>
+              <button class="act-btn del" onclick="delInvoiceItem(${idx})" title="刪除" style="padding:2px 4px">✕</button>
+            </div>
           </div>`;
         }).join('')}
     </div>
@@ -5766,6 +5774,7 @@ function confirmAddCasesToInvoice(){
   toast(msg);
 }
 function openAddInvoiceItem(){
+  _iiEditIdx=null;
   // Reset modal fields
   document.getElementById('ii-modal-title').textContent='新增 Invoice 項目';
   document.getElementById('ii-from-master').value='';
@@ -5777,8 +5786,53 @@ function openAddInvoiceItem(){
   document.getElementById('ii-qty').value=1;
   document.getElementById('ii-unit').value='集';
   document.getElementById('ii-master-panel').style.display='none';
+  // Reset sub + addon UI state
+  _iiSelectedSubId=null;_iiSelectedAddonIds=new Set();
+  const subSec=document.getElementById('ii-sub-section');if(subSec)subSec.style.display='none';
+  const addSec=document.getElementById('ii-addon-section');if(addSec)addSec.style.display='none';
   openM('invoice-item-modal');
   setTimeout(()=>document.getElementById('ii-service').focus(),50);
+}
+function openEditInvoiceItem(idx){
+  const inv=S.invoices[S.selectedInvoiceId];if(!inv)return;
+  const it=inv.items?.[idx];if(!it)return;
+  // Addon rows: bounce up to the nearest preceding non-addon parent so user
+  // edits the whole group at once
+  if(it.isAddon){
+    let p=idx-1;
+    while(p>=0&&inv.items[p].isAddon)p--;
+    if(p<0){toast('找不到對應的主項目',true);return;}
+    return openEditInvoiceItem(p);
+  }
+  _iiEditIdx=idx;
+  document.getElementById('ii-modal-title').textContent='✎ 編輯 Invoice 項目';
+  // Fill the basic fields
+  document.getElementById('ii-service').value=it.serviceLabel||'';
+  document.getElementById('ii-label').value=it.label||'';
+  document.getElementById('ii-category').value=it.category||'';
+  document.getElementById('ii-price').value=it.defaultPrice||0;
+  document.getElementById('ii-qty').value=it.qty==null?1:it.qty;
+  document.getElementById('ii-unit').value=it.unit||'';
+  // Master picker
+  const wid=it.sourceWorkItemId||'';
+  document.getElementById('ii-from-master').value=wid;
+  const w=wid?S.workItems[wid]:null;
+  document.getElementById('ii-master-trigger-text').textContent=w?w.label:'— 自訂輸入 —';
+  document.getElementById('ii-master-panel').style.display='none';
+  // Sub-item + addon selection
+  _iiSelectedSubId=it.sourceSubItemId||null;
+  _iiSelectedAddonIds=new Set();
+  for(let j=idx+1;j<inv.items.length;j++){
+    if(!inv.items[j].isAddon)break;
+    if(inv.items[j].sourceAddonId)_iiSelectedAddonIds.add(inv.items[j].sourceAddonId);
+  }
+  const subSec=document.getElementById('ii-sub-section');
+  const addSec=document.getElementById('ii-addon-section');
+  if(w&&(w.subItems||[]).length){subSec.style.display='block';renderIiSubOptions(w);}
+  else if(subSec)subSec.style.display='none';
+  if(w&&(w.addons||[]).length){addSec.style.display='block';renderIiAddons(w);}
+  else if(addSec)addSec.style.display='none';
+  openM('invoice-item-modal');
 }
 function refreshIiMasterDropdown(){
   const panel=document.getElementById('ii-master-panel');
@@ -5835,9 +5889,10 @@ function toggleIiMasterPicker(){
     },10);
   }
 }
-// Track sub-item + addon selection in the add-invoice-item modal
+// Track sub-item + addon selection + edit-mode index in the add-invoice-item modal
 let _iiSelectedSubId=null;
 let _iiSelectedAddonIds=new Set();
+let _iiEditIdx=null;  // null = adding new; otherwise the index of the item being edited
 function setIiMaster(wid,label){
   document.getElementById('ii-from-master').value=wid;
   document.getElementById('ii-master-trigger-text').textContent=wid?label:'— 自訂輸入 —';
@@ -5960,41 +6015,60 @@ function saveInvoiceItemFromModal(){
   if(!label){toast('請輸入內容（案件名稱）',true);return;}
   const wid=document.getElementById('ii-from-master').value;
   const w=wid?S.workItems[wid]:null;
+  const category=document.getElementById('ii-category').value.trim();
+  const price=parseInt(document.getElementById('ii-price').value)||0;
+  const qty=parseInt(document.getElementById('ii-qty').value)||1;
+  const unit=document.getElementById('ii-unit').value.trim()||'集';
   inv.items=inv.items||[];
-  // Push the main item — tag bundleSourceId when source is a Bundle so renderer
-  // expands children inline (matches quote behaviour)
-  inv.items.push({
-    itemId:uid(),
+  // Build the main item payload (reused for add + edit)
+  const mainPayload={
     label,
     serviceLabel:service,
-    category:document.getElementById('ii-category').value.trim(),
-    defaultPrice:parseInt(document.getElementById('ii-price').value)||0,
-    qty:parseInt(document.getElementById('ii-qty').value)||1,
-    unit:document.getElementById('ii-unit').value.trim()||'集',
+    category,
+    defaultPrice:price,
+    qty,
+    unit,
     sourceWorkItemId:wid||null,
     sourceSubItemId:_iiSelectedSubId||null,
     bundleSourceId:(w&&w.isBundle)?wid:null,
-  });
-  // Push selected addons as separate invoice lines
-  if(w&&_iiSelectedAddonIds.size){
-    (w.addons||[]).filter(a=>_iiSelectedAddonIds.has(a.id)).forEach(a=>{
-      inv.items.push({
-        itemId:uid(),
-        label:a.label,
-        serviceLabel:service,  // tag back to same service for visual grouping
-        category:document.getElementById('ii-category').value.trim(),
-        defaultPrice:a.amount||0,
-        qty:1,
-        unit:'',
-        sourceWorkItemId:wid||null,
-        sourceAddonId:a.id,
-        isAddon:true,
-      });
-    });
+  };
+  // Build the addon payloads (each becomes its own line tagged isAddon)
+  const addonPayloads=(w&&_iiSelectedAddonIds.size)
+    ?(w.addons||[]).filter(a=>_iiSelectedAddonIds.has(a.id)).map(a=>({
+      itemId:uid(),
+      label:a.label,
+      serviceLabel:service,
+      category,
+      defaultPrice:a.amount||0,
+      qty:1,
+      unit:'',
+      sourceWorkItemId:wid||null,
+      sourceAddonId:a.id,
+      isAddon:true,
+    }))
+    :[];
+  if(_iiEditIdx==null){
+    // ── Add new ──
+    inv.items.push({itemId:uid(),...mainPayload});
+    addonPayloads.forEach(a=>inv.items.push(a));
+  }else{
+    // ── Edit existing: replace parent, then swap out the consecutive addon block ──
+    const idx=_iiEditIdx;
+    const old=inv.items[idx];
+    if(!old||old.isAddon){closeM('invoice-item-modal');return;}
+    inv.items[idx]={...old,...mainPayload,itemId:old.itemId};
+    // Count + remove the run of addons that immediately follow this parent
+    let removeCount=0;
+    for(let j=idx+1;j<inv.items.length;j++){
+      if(!inv.items[j].isAddon)break;
+      removeCount++;
+    }
+    inv.items.splice(idx+1,removeCount,...addonPayloads);
   }
   inv.updatedAt=Date.now();
   recomputeInvoiceTotal(inv);
   saveInvoiceObj(inv);
+  _iiEditIdx=null;
   closeM('invoice-item-modal');
   renderInvoiceEditor();renderInvoicePreview();
 }
