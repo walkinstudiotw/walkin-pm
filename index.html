@@ -1652,15 +1652,32 @@ select.form-select:focus{border-color:#666666}
         <input class="form-input" id="cit-cost" type="number" inputmode="numeric" placeholder="（依案件預設）">
       </div>
       <div class="form-group">
-        <label class="form-label">與工作室分潤</label>
-        <select class="form-select" id="cit-share">
+        <label class="form-label">分潤模式</label>
+        <select class="form-select" id="cit-share" onchange="onCitShareChange()">
           <option value="">（依案件預設）</option>
-          <option value="yes">是 · 70/30</option>
-          <option value="no">否 · 100% 給負責人</option>
+          <option value="yes">與工作室 70/30</option>
+          <option value="no">100% 給負責人</option>
+          <option value="custom">自訂比例…</option>
         </select>
       </div>
     </div>
-    <p style="font-size:.66rem;color:#a86a00;margin:6px 0 0;line-height:1.4">提示：空白＝沿用案件預設值；填入＝這張 invoice line 專屬覆寫。手動項目（無關聯案件）一定要設「負責」才會分潤到人。</p>
+    <!-- Custom split % inputs — visible only when 分潤模式 = 自訂 -->
+    <div class="form-row-3" id="cit-custom-row" style="display:none;background:#f3e8fc;border:1px dashed #c0a0d8;border-radius:6px;padding:8px 10px;margin-top:6px">
+      <div class="form-group">
+        <label class="form-label">齊 (%)</label>
+        <input class="form-input" id="cit-split-qi" type="number" inputmode="numeric" min="0" max="100" value="0" oninput="updateCitSplitSum()">
+      </div>
+      <div class="form-group">
+        <label class="form-label">巫 (%)</label>
+        <input class="form-input" id="cit-split-wu" type="number" inputmode="numeric" min="0" max="100" value="0" oninput="updateCitSplitSum()">
+      </div>
+      <div class="form-group">
+        <label class="form-label">工作室 (%)</label>
+        <input class="form-input" id="cit-split-studio" type="number" inputmode="numeric" min="0" max="100" value="0" oninput="updateCitSplitSum()">
+      </div>
+    </div>
+    <div id="cit-split-sum" style="font-size:.7rem;text-align:right;margin-top:4px;color:#888;display:none">合計：<span id="cit-split-sum-val">0</span>%（必須等於 100）</div>
+    <p style="font-size:.66rem;color:#a86a00;margin:6px 0 0;line-height:1.4">提示：空白＝沿用案件預設值；填入＝這張 invoice line 專屬覆寫。手動項目（無關聯案件）一定要設「負責」或自訂比例才會分潤到人。</p>
     <div class="modal-btns" style="justify-content:space-between">
       <button class="btn-cancel" onclick="clearCashItemOverride()" style="color:#c53030">清除覆寫</button>
       <div style="display:flex;gap:8px">
@@ -6502,7 +6519,15 @@ function computeInvoiceSplit(inv){
       :(cs?(cs.shareWithStudio!==false):true);
     const net=Math.max(0,sub-cost);
     let qiCut=0,wuCut=0,studioCut=0;
-    if(shareStudio){
+    // Custom split overrides everything — exact %s applied to net (rounded, with studio
+    // taking the rounding remainder so the three cuts sum to net exactly)
+    const cust=it.customSplit;
+    if(cust&&((cust.qi||0)+(cust.wu||0)+(cust.studio||0))>0){
+      qiCut=Math.round(net*((cust.qi||0)/100));
+      wuCut=Math.round(net*((cust.wu||0)/100));
+      studioCut=net-qiCut-wuCut;
+      if(studioCut<0)studioCut=0;
+    }else if(shareStudio){
       // 70% to laborOwner, 30% to studio
       const laborCut=Math.round(net*0.7);
       studioCut=net-laborCut;
@@ -6538,8 +6563,40 @@ function openCashItemEdit(invId,idx){
   // Populate current values (empty = inherit)
   document.getElementById('cit-labor').value=it.laborOwner||'';
   document.getElementById('cit-cost').value=it.cost!=null?it.cost:'';
-  document.getElementById('cit-share').value=it.shareWithStudio==null?'':(it.shareWithStudio?'yes':'no');
+  // Custom split takes precedence over share preset
+  const cust=it.customSplit;
+  if(cust&&((cust.qi||0)+(cust.wu||0)+(cust.studio||0))>0){
+    document.getElementById('cit-share').value='custom';
+    document.getElementById('cit-split-qi').value=cust.qi||0;
+    document.getElementById('cit-split-wu').value=cust.wu||0;
+    document.getElementById('cit-split-studio').value=cust.studio||0;
+  }else{
+    document.getElementById('cit-share').value=it.shareWithStudio==null?'':(it.shareWithStudio?'yes':'no');
+    document.getElementById('cit-split-qi').value=0;
+    document.getElementById('cit-split-wu').value=0;
+    document.getElementById('cit-split-studio').value=0;
+  }
+  onCitShareChange();
   openM('cash-item-edit-modal');
+}
+function onCitShareChange(){
+  const mode=document.getElementById('cit-share').value;
+  const row=document.getElementById('cit-custom-row');
+  const sum=document.getElementById('cit-split-sum');
+  const isCustom=mode==='custom';
+  if(row)row.style.display=isCustom?'grid':'none';
+  if(sum)sum.style.display=isCustom?'block':'none';
+  if(isCustom)updateCitSplitSum();
+}
+function updateCitSplitSum(){
+  const qi=parseInt(document.getElementById('cit-split-qi').value)||0;
+  const wu=parseInt(document.getElementById('cit-split-wu').value)||0;
+  const st=parseInt(document.getElementById('cit-split-studio').value)||0;
+  const total=qi+wu+st;
+  const el=document.getElementById('cit-split-sum-val');
+  if(el)el.textContent=total;
+  const parent=document.getElementById('cit-split-sum');
+  if(parent)parent.style.color=total===100?'#1e6038':'#c53030';
 }
 function saveCashItemEdit(){
   const invId=document.getElementById('cit-inv-id').value;
@@ -6549,12 +6606,24 @@ function saveCashItemEdit(){
   const labor=document.getElementById('cit-labor').value.trim();
   const costRaw=document.getElementById('cit-cost').value.trim();
   const share=document.getElementById('cit-share').value;
+  // Validate custom split: must sum to 100
+  if(share==='custom'){
+    const qi=parseInt(document.getElementById('cit-split-qi').value)||0;
+    const wu=parseInt(document.getElementById('cit-split-wu').value)||0;
+    const st=parseInt(document.getElementById('cit-split-studio').value)||0;
+    if(qi+wu+st!==100){toast('自訂比例三項加總須等於 100',true);return;}
+    it.customSplit={qi,wu,studio:st};
+    // In custom mode, the share-with-studio shortcut is irrelevant — clear it
+    delete it.shareWithStudio;
+  }else{
+    delete it.customSplit;
+    if(share==='yes')it.shareWithStudio=true;
+    else if(share==='no')it.shareWithStudio=false;
+    else delete it.shareWithStudio;
+  }
   // Empty input → delete the override so we fall back to case defaults
   if(labor)it.laborOwner=labor;else delete it.laborOwner;
   if(costRaw!=='')it.cost=parseInt(costRaw)||0;else delete it.cost;
-  if(share==='yes')it.shareWithStudio=true;
-  else if(share==='no')it.shareWithStudio=false;
-  else delete it.shareWithStudio;
   inv.updatedAt=Date.now();
   saveInvoiceObj(inv);
   closeM('cash-item-edit-modal');
@@ -6562,10 +6631,11 @@ function saveCashItemEdit(){
   toast('已更新分潤設定');
 }
 function clearCashItemOverride(){
-  // Wipe all 3 overrides for this line and save
+  // Wipe all overrides for this line and save (also clears customSplit)
   document.getElementById('cit-labor').value='';
   document.getElementById('cit-cost').value='';
   document.getElementById('cit-share').value='';
+  onCitShareChange();
   saveCashItemEdit();
 }
 
@@ -6650,7 +6720,7 @@ function renderCashflow(){
       const csTitle=l.cs?escHtml(l.cs.title||''):'<span class="cash-no-case">手動項目</span>';
       const ssMark=l.shareStudio?'':'<span title="不與工作室分潤" style="color:#a86a00;font-size:.6rem;margin-left:4px">🚫🏠</span>';
       // Highlight items whose overrides differ from source case (or that have no case)
-      const overridden=(l.it.laborOwner||l.it.cost!=null||l.it.shareWithStudio!=null);
+      const overridden=(l.it.laborOwner||l.it.cost!=null||l.it.shareWithStudio!=null||l.it.customSplit);
       const editBg=overridden?'background:#fff8ee':'';
       return `<div class="cash-line">
         <div class="lab">${escHtml(l.it.label||'')}<div class="who">${csTitle} · 負責: ${escHtml(l.labor)}${ssMark}</div></div>
