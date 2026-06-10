@@ -2075,6 +2075,7 @@ function renderCases(){
         })()}
       </td>
       <td style="text-align:center;white-space:nowrap" onclick="event.stopPropagation()">
+        <button class="act-btn" onclick="openCopyCase('${c.id}')" title="複製案件">📄</button>
         <button class="act-btn del" onclick="delCase('${c.id}')" title="刪除">🗑️</button>
       </td>
     </tr>`;
@@ -2224,6 +2225,24 @@ function openEditCase(id){
   refreshLinkedToOptions();
   onBillingModeChange();
   openM('case-modal');
+}
+// Copy a case → open modal as 新增 with all fields pre-filled from source.
+// Reuses openEditCase to populate every field, then resets edit state so
+// saveCase() creates a brand-new case (new uid, no invoiceId carryover).
+function openCopyCase(id){
+  const src=S.cases[id];if(!src)return;
+  openEditCase(id);
+  // Override to "new" mode
+  S.editCaseId=null;
+  document.getElementById('case-modal-title').textContent='複製案件';
+  document.getElementById('case-del-btn').style.display='none';
+  // Mark title visibly so user knows it's a copy (they can edit before save)
+  const tEl=document.getElementById('f-title');
+  if(tEl)tEl.value=(src.title||'')+' (複製)';
+  // Reset status to 待開始 — a copy is new work
+  document.getElementById('f-status').value='todo';
+  const stStat=STATUS_OPTIONS.find(o=>o.v==='todo');
+  document.getElementById('fstat-trigger-text').textContent=stStat?stStat.label:'待開始';
 }
 function onClientChange(){
   // Refresh the linked-to dropdown (filtered by client)
