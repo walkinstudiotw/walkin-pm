@@ -5566,8 +5566,9 @@ function calcInvoiceTotal(inv){
   const subtotal=inv.items.reduce((s,i)=>s+(i.defaultPrice||0)*(i.qty==null?1:i.qty),0);
   const taxRate=inv.taxRate||0;
   const tax=Math.round(subtotal*taxRate/100);
-  const total=subtotal+tax;
-  return {subtotal,taxRate,tax,total};
+  const discount=Math.max(0,parseInt(inv.discount)||0);  // 優惠 — 稅後扣除
+  const total=Math.max(0,subtotal+tax-discount);
+  return {subtotal,taxRate,tax,discount,total};
 }
 function renderInvoiceEditor(){
   const editor=document.getElementById('inv-editor');
@@ -5612,6 +5613,10 @@ function renderInvoiceEditor(){
       <div class="form-group">
         <label class="form-label">稅率 (%)</label>
         <input class="form-input" type="number" value="${inv.taxRate||0}" oninput="updateInvoiceField('taxRate',parseInt(this.value)||0)">
+      </div>
+      <div class="form-group">
+        <label class="form-label">優惠（稅後扣除）</label>
+        <input class="form-input" type="number" inputmode="numeric" min="0" value="${inv.discount||0}" placeholder="0" oninput="updateInvoiceField('discount',parseInt(this.value)||0)">
       </div>
       <div class="form-group">
         <label class="form-label">狀態</label>
@@ -5672,7 +5677,7 @@ function renderInvoiceEditor(){
         }).join('')}
     </div>
     <div style="margin-top:14px;padding:10px 14px;background:#e8f5ec;border:1px solid #7de89a;border-radius:8px;display:flex;align-items:center;justify-content:space-between">
-      <span style="color:#666666;font-size:.78rem">Subtotal · Tax ${t.taxRate}% · <b style="color:#1e6038">Total</b></span>
+      <span style="color:#666666;font-size:.78rem">Subtotal · Tax ${t.taxRate}%${t.discount>0?` · <span style="color:#a08560">優惠 -$${fmtMoney(t.discount)}</span>`:''} · <b style="color:#1e6038">Total</b></span>
       <span style="font-family:'JetBrains Mono',monospace;color:#1e6038;font-size:1rem;font-weight:700">$${fmtMoney(t.total)}</span>
     </div>
   `;
@@ -6408,6 +6413,7 @@ function buildInvoicePdfHtml(inv,client){
   const totalsHtml=`<div class="qpdf-d-totals"><div class="qpdf-d-totals-box">
     <div class="qpdf-d-totals-row"><span class="lbl">Subtotal</span><span class="val">$${fmtMoney(t.subtotal)}</span></div>
     ${t.taxRate>0?`<div class="qpdf-d-totals-row"><span class="lbl">Tax ${t.taxRate}%</span><span class="val">$${fmtMoney(t.tax)}</span></div>`:''}
+    ${t.discount>0?`<div class="qpdf-d-totals-row"><span class="lbl" style="color:#a08560;font-weight:700">優惠</span><span class="val" style="color:#a08560;font-weight:700">-$${fmtMoney(t.discount)}</span></div>`:''}
     <div class="qpdf-d-totals-row grand"><span class="lbl">Total</span><span class="val">$${fmtMoney(t.total)}</span></div>
   </div></div>`;
   // terms — user lines + fixed law boilerplate
