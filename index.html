@@ -6328,11 +6328,12 @@ function buildInvoicePdfHtml(inv,client){
   const logoHtml=url?`<img src="${url}" alt="logo">`:`<div class="qpdf-d-logo-fallback">${escHtml(co.name).toUpperCase()}</div>`;
   const items=inv.items||[];
   const t=calcInvoiceTotal(inv);
-  // Helper: render an addon as italic child-style row (still contributes to subtotal)
+  // Helper: render an addon as italic child-style row.
+  // Addons are now merged into the parent's 小計, so this row's 小計 column is empty
+  // (the 單價 stays colored to show the +/- contribution to the parent).
   const renderAddonRow=(a)=>{
     const aQty=a.qty==null?1:a.qty;
     const aPrice=a.defaultPrice||0;
-    const aSub=aPrice*aQty;
     const isNeg=aPrice<0;
     const sign=isNeg?'-':'+';
     const color=isNeg?'#a08560':'#1e6038';
@@ -6342,7 +6343,7 @@ function buildInvoicePdfHtml(inv,client){
       <td class="right" style="color:${color}">${sign}$${fmtMoney(Math.abs(aPrice))}</td>
       <td class="right">${aQty}</td>
       <td class="right">${escHtml(a.unit||'—')}</td>
-      <td class="right" style="color:${color};font-weight:600">${sign}$${fmtMoney(Math.abs(aSub))}</td>
+      <td></td>
     </tr>`;
   };
   // Walk items: for each non-addon, render main row + bundle children + consecutive addons.
@@ -6357,7 +6358,14 @@ function buildInvoicePdfHtml(inv,client){
       // Orphan addon (no preceding parent) → render as italic row anyway
       if(it.isAddon){html+=renderAddonRow(it);continue;}
       const qty=it.qty==null?1:it.qty;
-      const sub=(it.defaultPrice||0)*qty;
+      const baseSub=(it.defaultPrice||0)*qty;
+      // Look ahead to find addons that immediately follow — their contribution merges
+      // into this parent's 小計 (addon rows themselves render with empty 小計 cell)
+      let addonContribution=0;
+      for(let k=i+1;k<items.length&&items[k].isAddon;k++){
+        addonContribution+=(items[k].defaultPrice||0)*(items[k].qty==null?1:items[k].qty);
+      }
+      const mergedSub=baseSub+addonContribution;
       const bwId=it.bundleSourceId||(it.sourceWorkItemId&&S.workItems[it.sourceWorkItemId]?.isBundle?it.sourceWorkItemId:null);
       const bw=bwId?S.workItems[bwId]:null;
       html+=`<tr>
@@ -6366,7 +6374,7 @@ function buildInvoicePdfHtml(inv,client){
         <td class="right">$${fmtMoney(it.defaultPrice)}</td>
         <td class="right">${qty}</td>
         <td class="right" style="color:#666">${escHtml(it.unit||'—')}</td>
-        <td class="right">$${fmtMoney(sub)}</td>
+        <td class="right">$${fmtMoney(mergedSub)}</td>
       </tr>`;
       // Bundle children (info-only, no subtotal)
       if(bw?.isBundle&&bw.bundleChildIds?.length){
