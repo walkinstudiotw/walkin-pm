@@ -1218,9 +1218,17 @@ select.form-select:focus{border-color:#666666}
           <input class="form-input" id="cl-invoice-email" type="email" placeholder="例：finance@example.com（可與聯絡 Email 不同）">
         </div>
       </div>
-      <div class="form-group full" style="margin-top:8px">
-        <label class="form-label">備註</label>
-        <input class="form-input" id="cl-account" placeholder="例：偏好 email 溝通、固定每月初請款...">
+      <div class="form-row" style="margin-top:8px">
+        <div class="form-group">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.78rem;color:#666666;padding-top:18px">
+            <input type="checkbox" id="cl-issues-receipt" style="accent-color:#1e6038">
+            <span>開立發票（產生 Invoice 時預設帶入 5% 稅金）</span>
+          </label>
+        </div>
+        <div class="form-group">
+          <label class="form-label">備註</label>
+          <input class="form-input" id="cl-account" placeholder="例：偏好 email 溝通、固定每月初請款...">
+        </div>
       </div>
     </div>
 
@@ -2948,6 +2956,7 @@ function openAddClient(){
   document.getElementById('cl-del-btn').style.display='none';
   ['cl-name','cl-contact','cl-phone','cl-company','cl-taxid','cl-email','cl-account','cl-invoice-prefix','cl-invoice-email'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
   const ss=document.getElementById('cl-share-studio');if(ss)ss.checked=true;
+  const ir=document.getElementById('cl-issues-receipt');if(ir)ir.checked=false;
   openM('client-modal');
 }
 function openEditClient(id){
@@ -2965,6 +2974,7 @@ function openEditClient(id){
   const ip=document.getElementById('cl-invoice-prefix');if(ip)ip.value=c.invoicePrefix||'';
   const ie=document.getElementById('cl-invoice-email');if(ie)ie.value=c.invoiceEmail||'';
   const ss=document.getElementById('cl-share-studio');if(ss)ss.checked=c.defaultShareWithStudio!==false;
+  const ir=document.getElementById('cl-issues-receipt');if(ir)ir.checked=!!c.issuesReceipt;
   openM('client-modal');
 }
 function saveClient(){
@@ -2983,6 +2993,7 @@ function saveClient(){
     invoicePrefix:(document.getElementById('cl-invoice-prefix')?.value||'').trim().toUpperCase(),
     invoiceEmail:(document.getElementById('cl-invoice-email')?.value||'').trim(),
     defaultShareWithStudio:document.getElementById('cl-share-studio')?.checked!==false,
+    issuesReceipt:!!document.getElementById('cl-issues-receipt')?.checked,
     quotation:existing.quotation||{items:[],updatedAt:Date.now()},
   };
   saveClientObj(c);
@@ -5404,6 +5415,8 @@ function createBlankInvoice(clientId,billingMonth,prefixOverride,seedCases){
     sourceCaseIds.push(cs.id);
   });
   const subtotal=items.reduce((s,i)=>s+(i.defaultPrice||0)*(i.qty||1),0);
+  // Default 5% tax if client opts to 開立發票 — user can still zero it in the editor
+  const defaultTaxRate=c.issuesReceipt?5:0;
   const inv={
     id,
     invoiceNumber:nextInvoiceNumber(prefix,billingMonth),
@@ -5414,11 +5427,11 @@ function createBlankInvoice(clientId,billingMonth,prefixOverride,seedCases){
     dueDate:`${due.getFullYear()}/${String(due.getMonth()+1).padStart(2,'0')}/${String(due.getDate()).padStart(2,'0')}`,
     status:'draft',
     items,
-    taxRate:0,
+    taxRate:defaultTaxRate,
     serviceNotes:'',
     terms:'',
     showSignature:false,
-    total:subtotal,
+    total:subtotal+Math.round(subtotal*defaultTaxRate/100),
     createdAt:Date.now(),
     updatedAt:Date.now(),
     sourceCaseIds,
@@ -5509,6 +5522,7 @@ function doGenerateMonthlyInvoices(month){
       unit:'集',
     }));
     const subtotal=items.reduce((s,i)=>s+i.defaultPrice*(i.qty||1),0);
+    const defaultTaxRate=c.issuesReceipt?5:0;
     const inv={
       id,
       invoiceNumber:nextInvoiceNumber(prefix,month),
@@ -5519,11 +5533,11 @@ function doGenerateMonthlyInvoices(month){
       dueDate:`${due.getFullYear()}/${String(due.getMonth()+1).padStart(2,'0')}/${String(due.getDate()).padStart(2,'0')}`,
       status:'draft',
       items,
-      taxRate:0,
+      taxRate:defaultTaxRate,
       serviceNotes:'',
       terms:'',
       showSignature:false,
-      total:subtotal,
+      total:subtotal+Math.round(subtotal*defaultTaxRate/100),
       createdAt:Date.now(),
       updatedAt:Date.now(),
       sourceCaseIds:cases.map(cs=>cs.id),
