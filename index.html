@@ -5626,6 +5626,10 @@ function renderInvoiceEditor(){
           <option value="paid" ${inv.status==='paid'?'selected':''}>已收款</option>
         </select>
       </div>
+      ${inv.status==='paid'?`<div class="form-group">
+        <label class="form-label" style="color:#1e6038">收款日期 *</label>
+        <input class="form-input" type="date" value="${escHtml((inv.paidDate||'').replace(/\//g,'-'))}" onchange="updateInvoiceField('paidDate',this.value.replace(/-/g,'/'))">
+      </div>`:''}
       <div class="form-group full">
         <label class="form-label">備註（顯示在 PDF 條款區）</label>
         <textarea class="form-textarea" rows="2" oninput="updateInvoiceField('terms',this.value)" placeholder="例：付款請於 30 日內完成、發票將於收款後寄送">${escHtml(inv.terms||'')}</textarea>
@@ -5689,8 +5693,22 @@ function updateInvoiceField(field,val){
   const inv=S.invoices[S.selectedInvoiceId];if(!inv)return;
   inv[field]=val;
   inv.updatedAt=Date.now();
+  // When the user flips status to 已收款, auto-fill 收款日期 with today (if not already set)
+  // and re-render the editor so the 收款日期 input appears
+  let needEditorRerender=false;
+  if(field==='status'){
+    if(val==='paid'){
+      if(!inv.paidDate){
+        const d=new Date();
+        inv.paidDate=`${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+        inv.paidAt=Date.now();
+      }
+    }
+    needEditorRerender=true;
+  }
   recomputeInvoiceTotal(inv);
   saveInvoiceObj(inv);
+  if(needEditorRerender)renderInvoiceEditor();
   renderInvoicePreview();
 }
 function addInvoiceItem(){
@@ -6879,7 +6897,13 @@ function setInvoicePaymentStatus(id,status){
   const inv=S.invoices[id];if(!inv)return;
   if(!['sent','paid'].includes(status))return;
   inv.status=status;
-  if(status==='paid')inv.paidAt=Date.now();
+  if(status==='paid'){
+    inv.paidAt=Date.now();
+    if(!inv.paidDate){
+      const d=new Date();
+      inv.paidDate=`${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+    }
+  }
   inv.updatedAt=Date.now();
   saveInvoiceObj(inv);
   toast(`已標記為「${status==='paid'?'已收款':'待收款'}」`);
