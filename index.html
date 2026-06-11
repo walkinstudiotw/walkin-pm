@@ -1873,7 +1873,14 @@ function saveInvoiceObj(inv){
 function deleteInvoiceObj(id){
   _db.ref(`${ROOT}/invoices/${id}`).remove();
 }
-function invoiceList(){return Object.values(S.invoices||{}).sort((a,b)=>(b.issuedAt||0)-(a.issuedAt||0));}
+function invoiceList(){
+  return Object.values(S.invoices||{}).sort((a,b)=>{
+    // 開立日期 desc — fallback to issuedAt timestamp when date string is empty
+    const ad=a.issuedDate||'';const bd=b.issuedDate||'';
+    if(ad!==bd)return bd.localeCompare(ad);
+    return (b.issuedAt||0)-(a.issuedAt||0);
+  });
+}
 function saveOutsourcerObj(o){if(!_fbReady)return;_db.ref(`${ROOT}/outsourcers/${o.id}`).set(JSON.parse(JSON.stringify(o)));}
 function deleteOutsourcerObj(id){_db.ref(`${ROOT}/outsourcers/${id}`).remove();}
 function outsourcerList(){return Object.values(S.outsourcers||{}).sort((a,b)=>(a.name||'').localeCompare(b.name||'','zh-TW'));}
@@ -5176,7 +5183,7 @@ function renderInvoices(){
         <div class="ino">${escHtml(inv.invoiceNumber||'—')}</div>
         <div class="meta-block">
           <div class="ic">${escHtml(cName)}</div>
-          <div class="im">${escHtml(inv.billingMonth||'')} · ${(inv.items||[]).length} 項</div>
+          <div class="im">${escHtml(inv.billingMonth||'')} · 開立 ${escHtml(inv.issuedDate||'—')} · ${(inv.items||[]).length} 項</div>
         </div>
         <div class="right-block">
           <div class="amt">$${fmtMoney(inv.total||0)}</div>
