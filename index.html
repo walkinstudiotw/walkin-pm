@@ -5174,7 +5174,7 @@ function renderInvoices(){
       <div style="font-size:.65rem;margin-top:6px;color:#444">點上方「🗓 月底結算」聚合本月已完成案件，或「＋ 新增」手動建立</div>
     </div>`;
   }else{
-    list.innerHTML=arr.map(inv=>{
+    const cardHtml=(inv)=>{
       const c=S.clients[inv.clientId];
       const cName=c?c.name:'（客戶已刪除）';
       const isActive=inv.id===S.selectedInvoiceId?' active':'';
@@ -5190,7 +5190,20 @@ function renderInvoices(){
           <div class="inv-status ${inv.status||'draft'}">${statusLabel}</div>
         </div>
       </div>`;
-    }).join('');
+    };
+    // When status filter is 'all', split into 待處理 (draft + sent) vs 已收款.
+    // arr is already sorted by issuedDate desc, so both sub-lists inherit the order.
+    const sectionHdr=(label,n,color)=>`<div style="font-size:.65rem;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:.6px;padding:8px 4px 4px;border-bottom:1px solid #e8e8e8;margin-bottom:4px;display:flex;justify-content:space-between"><span>${label}</span><span style="color:#888">${n} 張</span></div>`;
+    if(S.invoiceFilter.status==='all'){
+      const unpaid=arr.filter(i=>i.status!=='paid');
+      const paid=arr.filter(i=>i.status==='paid');
+      let html='';
+      if(unpaid.length)html+=sectionHdr('🟡 待處理',unpaid.length,'#a86a00')+unpaid.map(cardHtml).join('');
+      if(paid.length)html+=sectionHdr('✅ 已收款',paid.length,'#1e6038')+paid.map(cardHtml).join('');
+      list.innerHTML=html;
+    }else{
+      list.innerHTML=arr.map(cardHtml).join('');
+    }
   }
   // If in editor mode, render the editor
   if(S.invoiceViewMode==='editor'&&S.selectedInvoiceId){
