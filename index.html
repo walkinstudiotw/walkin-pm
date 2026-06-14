@@ -112,6 +112,11 @@ body{display:flex;flex-direction:column}
 .tbl td{padding:6px 10px;font-size:.78rem;vertical-align:middle;color:#1a1a1a}
 .ep-num{font-family:'JetBrains Mono',monospace;font-size:.72rem;color:#1a1a1a;font-weight:700}
 .date-cell{font-size:.75rem;color:#444444;white-space:nowrap;font-family:'JetBrains Mono',monospace}
+.case-date-input{font-size:.75rem;color:#444444;font-family:'JetBrains Mono',monospace;background:transparent;border:1px solid transparent;border-radius:4px;padding:3px 6px;cursor:pointer;outline:none;transition:all .12s;width:130px}
+.case-date-input:hover{background:#f5f5f5;border-color:#d8d8d8}
+.case-date-input:focus{background:#ffffff;border-color:#7de89a;cursor:text}
+.case-date-input.date-soon{color:#c53030;background:#fde8e8}
+.case-date-input.date-warn{color:#a86a00;background:#fff8ee}
 .date-soon{background:#fde8e8;color:#ff8a8a;padding:2px 6px;border-radius:4px}
 .date-warn{background:#fff4e6;color:#f39c12;padding:2px 6px;border-radius:4px}
 .check-toggle{width:15px;height:15px;accent-color:#666666;cursor:pointer}
@@ -2119,7 +2124,9 @@ function renderCases(){
       <td><span class="ep-num">${escHtml(clientName(c.clientId))}</span></td>
       <td>${escHtml(c.title||'')}</td>
       <td><span class="type-pill">${escHtml(c.type||'')}</span></td>
-      <td><span class="date-cell ${dateCls}">${fmDate(c.dueDate)||'—'}</span></td>
+      <td onclick="event.stopPropagation()">
+        <input type="date" class="case-date-input ${dateCls}" value="${escHtml(c.dueDate||'')}" onchange="updateCaseDate('${c.id}',this.value)" title="點擊修改交期">
+      </td>
       <td>${amtStr}</td>
       <td class="muted">${escHtml(c.materialNote||'')}</td>
       <td class="muted">${escHtml(c.paymentNote||c.notes||'')}</td>
@@ -2184,6 +2191,12 @@ function setCaseStatus(id,status){
   const c=S.cases[id];if(!c)return;
   if(!['todo','doing','editing','done'].includes(status))return;
   c.status=status;c.updatedAt=Date.now();
+  saveCaseObj(c);
+}
+function updateCaseDate(id,val){
+  const c=S.cases[id];if(!c)return;
+  c.dueDate=val||'';
+  c.updatedAt=Date.now();
   saveCaseObj(c);
 }
 function delCase(id){
