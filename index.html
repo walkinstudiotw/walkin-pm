@@ -2271,7 +2271,11 @@ function openEditCase(id){
   renderFAddons();
   document.getElementById('f-type').value=c.type||'Podcast';
   document.getElementById('ftyp-trigger-text').textContent=c.type||'Podcast';
-  document.getElementById('f-amount').value=c.pricing?.amount||'';
+  // pricing.amount is stored as the FINAL total (base + addons). Extract the base
+  // so the field reflects what the user originally typed.
+  const savedAddonSum=_fAddons.reduce((s,a)=>s+(a.amount||0)*(a.qty||0),0);
+  const extractedBase=Math.max(0,(c.pricing?.amount||0)-savedAddonSum);
+  document.getElementById('f-amount').value=extractedBase||'';
   document.getElementById('f-due').value=c.dueDate||'';
   document.getElementById('f-labor').value=c.laborOwner||'齊';
   document.getElementById('flab-trigger-text').textContent=c.laborOwner||'齊';
@@ -2651,25 +2655,19 @@ function updateFAddonQty(idx,val){
   recomputeFAmount();
 }
 function recomputeFAmount(){
-  // base price = workItem.defaultPrice if a master picked, else current f-amount
-  const wid=document.getElementById('f-quote-item').value;
-  const w=wid?S.workItems[wid]:null;
-  const base=w?(w.defaultPrice||0):0;
+  // 「基本價＋加減項合計」 reflects what the user typed in 收款金額 as the base
+  // (matches the user's mental model — 收款金額 is the base, addons stack on top).
+  const amtEl=document.getElementById('f-amount');
+  const base=parseInt(amtEl?.value)||0;
   const addonSum=_fAddons.reduce((s,a)=>s+(a.amount||0)*(a.qty||0),0);
   const total=base+addonSum;
-  // Update summary
   const totalEl=document.getElementById('f-addons-total');
   if(totalEl){
     totalEl.textContent='$'+fmtMoney(total);
     totalEl.style.color=total<0?'#c53030':'#1e6038';
   }
-  // Auto-fill the amount field unless user manually edited it
-  if(w&&!_fAmountManuallyEdited){
-    const amtEl=document.getElementById('f-amount');
-    if(amtEl&&!amtEl.disabled)amtEl.value=total;
-  }
 }
-function onFAmountManualEdit(){_fAmountManuallyEdited=true;}
+function onFAmountManualEdit(){_fAmountManuallyEdited=true;recomputeFAmount();}
 
 // ── 案件 modal 外包設定 ──
 function onFOutsourcedChange(){
@@ -2775,7 +2773,11 @@ function saveCase(){
   if(!clientId){saveCaseError('請選擇客戶','fcli-trigger');return;}
   if(!title){saveCaseError('請填寫標題','f-title');return;}
   const quotationItemId=document.getElementById('f-quote-item').value||null;
-  const amount=parseInt(document.getElementById('f-amount').value)||0;
+  // 收款金額 field is the BASE — final pricing.amount = base + addonSum so downstream
+  // invoice generation (which subtracts addons to derive the line price) still works
+  const baseAmount=parseInt(document.getElementById('f-amount').value)||0;
+  const addonSumAtSave=_fAddons.filter(a=>a.qty>0).reduce((s,a)=>s+(a.amount||0)*(a.qty||0),0);
+  const amount=baseAmount+addonSumAtSave;
   // Read billing-link state
   const billingLinked=document.getElementById('f-billing-linked').checked;
   let linkedToCaseId=null;
