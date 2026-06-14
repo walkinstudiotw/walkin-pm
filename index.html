@@ -2065,8 +2065,10 @@ function filteredCases(){
   const by=S.cf.sortBy||'dueDate';
   arr.sort((a,b)=>{
     if(by==='title')return (a.title||'').localeCompare(b.title||'','zh-TW',{numeric:true})*dir;
-    // default: dueDate
-    return (a.dueDate||'9999').localeCompare(b.dueDate||'9999')*dir;
+    // default: dueDate — tie-break on title (always ascending) so same-day cases group nicely
+    const d=(a.dueDate||'9999').localeCompare(b.dueDate||'9999');
+    if(d!==0)return d*dir;
+    return (a.title||'').localeCompare(b.title||'','zh-TW',{numeric:true});
   });
   return arr;
 }
