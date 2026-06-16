@@ -184,6 +184,14 @@ body{display:flex;flex-direction:column}
 .cash-line .num.split-s{color:#a08560;font-weight:700}
 .cash-line-hdr{font-size:.6rem;color:#888;text-transform:uppercase;letter-spacing:.4px;padding:4px 4px 4px;font-weight:700}
 .cash-totals{margin-top:8px;padding:8px 4px;display:grid;grid-template-columns:1fr 70px 50px 80px 80px 80px 80px 28px;gap:8px;border-top:2px solid #d8d8d8;font-size:.74rem;font-weight:700}
+.cash-payouts{display:grid;grid-template-columns:1fr 70px 50px 80px 80px 80px 80px 28px;gap:8px;align-items:center;padding:6px 4px 8px;border-top:1px dashed #e0d8c0}
+.cash-payouts .lbl{font-size:.62rem;color:#888;text-transform:uppercase;letter-spacing:.4px;font-weight:700}
+.cash-payout-cell{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.cash-payout-lbl{display:flex;align-items:center;gap:3px;font-size:.62rem;color:#888;cursor:pointer;white-space:nowrap;user-select:none}
+.cash-payout-cell.paid .cash-payout-lbl{color:#1e6038;font-weight:700}
+.cash-payout-date{font-family:'JetBrains Mono',monospace;font-size:.6rem;padding:1px 3px;border:1px solid #d8d8d8;border-radius:3px;background:#fff;width:80px;color:#1e6038;outline:none;cursor:pointer}
+.cash-payout-date:disabled{opacity:.3;background:#f5f5f5;cursor:not-allowed}
+.cash-payout-empty{text-align:right;color:#bbb;font-size:.66rem}
 .cash-totals .num{font-family:'JetBrains Mono',monospace;text-align:right}
 .cash-status-toggle{display:flex;gap:0;border:1px solid #d8d8d8;border-radius:6px;overflow:hidden}
 .cash-status-toggle button{flex:1;padding:3px 8px;font-size:.64rem;background:#ffffff;border:none;cursor:pointer;color:#666;font-family:inherit;font-weight:700;border-right:1px solid #d8d8d8}
@@ -6845,9 +6853,51 @@ function renderCashflow(){
           <div class="num" style="color:#a08560">$${fmtMoney(split.totals.studio)}</div>
           <div></div>
         </div>
+        <div class="cash-payouts">
+          <div class="lbl" style="text-align:right">付款狀態 →</div>
+          <div></div><div></div><div></div>
+          ${renderPayoutCell(inv.id,'qi',split.totals.qi,inv.payouts?.qi)}
+          ${renderPayoutCell(inv.id,'wu',split.totals.wu,inv.payouts?.wu)}
+          ${renderPayoutCell(inv.id,'studio',split.totals.studio,inv.payouts?.studio)}
+          <div></div>
+        </div>
       </div>
     </div>`;
   }).join('');
+}
+function renderPayoutCell(invId,who,amount,payout){
+  if(!amount)return '<div class="cash-payout-empty">—</div>';
+  const paid=!!payout?.paid;
+  const date=payout?.date||'';
+  const dateInputVal=date.replace(/\//g,'-');
+  return `<div class="cash-payout-cell${paid?' paid':''}">
+    <label class="cash-payout-lbl" title="勾選＝標記已付，自動帶今日為付款日">
+      <input type="checkbox" ${paid?'checked':''} onchange="togglePayout('${invId}','${who}',this.checked)" style="accent-color:#1e6038;margin:0">
+      <span>${paid?'已付':'未付'}</span>
+    </label>
+    <input type="date" class="cash-payout-date" value="${dateInputVal}" ${paid?'':'disabled'} onchange="updatePayoutDate('${invId}','${who}',this.value)" title="付款日期（可改）">
+  </div>`;
+}
+function togglePayout(invId,who,checked){
+  const inv=S.invoices[invId];if(!inv)return;
+  inv.payouts=inv.payouts||{};
+  inv.payouts[who]=inv.payouts[who]||{};
+  inv.payouts[who].paid=!!checked;
+  if(checked&&!inv.payouts[who].date){
+    const d=new Date();
+    inv.payouts[who].date=`${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+  }
+  inv.updatedAt=Date.now();
+  saveInvoiceObj(inv);
+  renderCashflow();
+}
+function updatePayoutDate(invId,who,val){
+  const inv=S.invoices[invId];if(!inv)return;
+  inv.payouts=inv.payouts||{};
+  inv.payouts[who]=inv.payouts[who]||{};
+  inv.payouts[who].date=val?val.replace(/-/g,'/'):'';
+  inv.updatedAt=Date.now();
+  saveInvoiceObj(inv);
 }
 function toggleCashRow(id){
   if(S.cashFilter.expandedIds.has(id))S.cashFilter.expandedIds.delete(id);
