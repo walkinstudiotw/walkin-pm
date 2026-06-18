@@ -6824,13 +6824,11 @@ function renderCashflow(){
         <button class="act-btn" onclick="openCashItemEdit('${inv.id}',${idx})" title="編輯分潤設定" style="padding:2px 4px;${editBg}">✎</button>
       </div>`;
     }).join('');
-    // Unpaid indicators — small amber text listing people who have a share but
-    // aren't marked paid yet. Show on every invoice (regardless of收款 status)
-    // so user can plan distributions before money lands.
+    // Unpaid indicators — small amber text listing people owed a distribution.
+    // 工作室 is excluded (studio handles 收款 itself, no transfer needed).
     const unpaidBits=[];
     if(split.totals.qi>0&&!inv.payouts?.qi?.paid)unpaidBits.push('齊');
     if(split.totals.wu>0&&!inv.payouts?.wu?.paid)unpaidBits.push('巫');
-    if(split.totals.studio>0&&!inv.payouts?.studio?.paid)unpaidBits.push('工作室');
     const unpaidHtml=unpaidBits.length?`<span style="font-size:.6rem;color:#a86a00;font-weight:600;margin-left:6px">⏳ ${unpaidBits.map(b=>b+'未付').join(' · ')}</span>`:'';
     return `<div class="cash-row${isExpanded?' expanded':''}" data-id="${inv.id}">
       <div class="cash-row-head" onclick="toggleCashRow('${inv.id}')">
