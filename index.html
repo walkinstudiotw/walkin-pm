@@ -2098,6 +2098,25 @@ function resolveCaseInvoice(cs){
   const drift=((matched.label||'').trim()!==((cs.title||'').trim()))?'label':'none';
   return {inv,drift};
 }
+// UI action: overwrite the invoice item's label with the case's current title
+// (fixes label drift when the case is legitimately still billed but the
+// invoice line was renamed).
+function syncCaseTitleToInvoiceUi(caseId){
+  const cs=S.cases[caseId];if(!cs)return;
+  const inv=cs.invoiceId?S.invoices[cs.invoiceId]:null;
+  if(!inv||!Array.isArray(inv.items)){toast('找不到對應 Invoice',true);return;}
+  const idx=inv.items.findIndex(it=>it.sourceCaseId===cs.id&&!it.isAddon);
+  if(idx<0){toast('Invoice 內找不到對應 line',true);return;}
+  const oldLabel=inv.items[idx].label||'';
+  const newLabel=cs.title||'';
+  if(oldLabel===newLabel){toast('已經同步，無需變更');return;}
+  showConf('同步案件名稱到 Invoice？',`Invoice「${inv.invoiceNumber||''}」中的項目名稱「${oldLabel}」將改為「${newLabel}」。`,()=>{
+    inv.items[idx].label=newLabel;
+    inv.updatedAt=Date.now();
+    saveInvoiceObj(inv);
+    toast('已同步案件名稱');
+  });
+}
 // UI action: unlink this case from its invoice manually (with confirm).
 function unlinkCaseFromInvoiceUi(caseId){
   const cs=S.cases[caseId];if(!cs)return;
@@ -2240,8 +2259,10 @@ function renderCases(){
               emoji='✅';
               tip=`點擊跳到 Invoice ${escHtml(inv.invoiceNumber||'')}`;
             }
+            const syncBtn=drift==='label'?`<button class="act-btn" onclick="syncCaseTitleToInvoiceUi('${c.id}')" title="將案件名稱同步到 Invoice 中" style="padding:0 3px;font-size:.7rem;line-height:1;color:#1e6038">🔄</button>`:'';
             return `<span style="display:inline-flex;align-items:center;gap:3px">
               <span class="${cls}" onclick="jumpToInvoice('${inv.id}')" title="${tip}">${emoji} ${escHtml(inv.invoiceNumber||'已請款')}</span>
+              ${syncBtn}
               <button class="act-btn del" onclick="unlinkCaseFromInvoiceUi('${c.id}')" title="取消請款連結" style="padding:0 3px;font-size:.65rem;line-height:1">✕</button>
             </span>`;
           }
