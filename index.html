@@ -209,6 +209,8 @@ body{display:flex;flex-direction:column}
 .invoiced-badge{display:inline-block;padding:2px 9px;border-radius:10px;font-size:.64rem;font-weight:700;white-space:nowrap;cursor:pointer;background:#e8f5ec;color:#1e6038;border:1px solid #7de89a;font-family:'JetBrains Mono',monospace;letter-spacing:.3px;transition:all .15s}
 .invoiced-badge:hover{background:#d8f0e0;border-color:#7de89a;transform:translateY(-1px)}
 .invoiced-badge.stale{background:#fff4e6;color:#a86a00;border-color:#6a3e00}
+.invoiced-badge.draft{background:#e6f0fa;color:#1e4a80;border-color:#a8c8e8}
+.invoiced-badge.draft:hover{background:#d8e6f5;border-color:#7ea8d8}
 
 /* TYPE PILL */
 .type-pill{display:inline-block;padding:1px 7px;border-radius:8px;font-size:.65rem;background:#f5f5f5;color:#666666;border:1px solid #cccccc;font-weight:500}
@@ -2078,8 +2080,15 @@ function filteredCases(){
   let arr=caseList();
   if(S.cf.status==='active')arr=arr.filter(c=>(c.status||'todo')!=='done');
   else if(S.cf.status==='unbilled'){
-    // 未請款：尚未關聯任何 invoice 的主案件（附屬案件會跟主案件請款，不算）
-    arr=arr.filter(c=>!c.invoiceId&&!c.linkedToCaseId);
+    // 未請款：主案件中，(a) 完全沒有關聯 invoice，或
+    //         (b) 有 invoice 但 invoice 還是草稿（未寄出）
+    // 附屬案件會跟主案件請款，不列入
+    arr=arr.filter(c=>{
+      if(c.linkedToCaseId)return false;
+      if(!c.invoiceId)return true;
+      const inv=S.invoices[c.invoiceId];
+      return !inv||inv.status==='draft';
+    });
   }
   else if(S.cf.status!=='all')arr=arr.filter(c=>(c.status||'todo')===S.cf.status);
   const cl=document.getElementById('cf-client').value;
@@ -2175,7 +2184,12 @@ function renderCases(){
           if(c.invoiceId){
             const inv=S.invoices[c.invoiceId];
             if(inv){
-              return `<span class="invoiced-badge" onclick="jumpToInvoice('${c.invoiceId}')" title="點擊跳到 Invoice ${escHtml(inv.invoiceNumber||'')}">✅ ${escHtml(inv.invoiceNumber||'已請款')}</span>`;
+              // Draft invoice = 未寄出 → blue badge，代表已帶入但還沒真正請款
+              const isDraft=inv.status==='draft';
+              const cls=isDraft?'invoiced-badge draft':'invoiced-badge';
+              const emoji=isDraft?'📝':'✅';
+              const tip=isDraft?`Invoice ${escHtml(inv.invoiceNumber||'')} 尚未寄出`:`點擊跳到 Invoice ${escHtml(inv.invoiceNumber||'')}`;
+              return `<span class="${cls}" onclick="jumpToInvoice('${c.invoiceId}')" title="${tip}">${emoji} ${escHtml(inv.invoiceNumber||'已請款')}</span>`;
             }
             return `<span class="invoiced-badge stale" title="關聯的 Invoice 已不存在">⚠️ ?</span>`;
           }
