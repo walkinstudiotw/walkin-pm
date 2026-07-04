@@ -167,6 +167,29 @@ body{display:flex;flex-direction:column}
 .cash-card .val.gold{color:#a08560}
 .cash-card .sub{font-size:.62rem;color:#888;font-family:'JetBrains Mono',monospace}
 .cash-list{padding:0 14px 14px;display:flex;flex-direction:column;gap:8px}
+.cash-month{display:flex;flex-direction:column;gap:8px}
+.cash-month + .cash-month{margin-top:16px}
+.cash-month-header{background:#faf6ee;border:1px solid #e0d5b8;border-radius:10px;padding:12px 16px;display:flex;flex-direction:column;gap:10px}
+.cash-month-header .cmh-top{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.cash-month-header .cmh-title{font-size:1.05rem;font-weight:800;color:#5a3d10;letter-spacing:.5px;font-family:'JetBrains Mono',monospace}
+.cash-month-header .cmh-meta{font-family:'JetBrains Mono',monospace;color:#666;font-size:.74rem}
+.cash-month-header .cmh-meta b{color:#1e6038;font-size:.85rem}
+.cash-month-header .cmh-pills{display:flex;flex-wrap:wrap;gap:6px}
+.cash-month-pill{display:inline-flex;flex-direction:column;padding:6px 10px;border-radius:6px;border:1px solid transparent;font-size:.66rem;letter-spacing:.3px}
+.cash-month-pill .k{color:#666;text-transform:uppercase;font-weight:700;font-size:.58rem;letter-spacing:.5px}
+.cash-month-pill .v{font-family:'JetBrains Mono',monospace;font-weight:800;font-size:.85rem;margin-top:1px}
+.cash-month-pill .u{font-family:'JetBrains Mono',monospace;color:#a86a00;font-size:.6rem;margin-top:1px;font-weight:600}
+.cash-month-pill.recv{background:#f0f8f2;border-color:#a8d8b8}
+.cash-month-pill.recv .v{color:#1e6038}
+.cash-month-pill.pend{background:#fff8ee;border-color:#f0c878}
+.cash-month-pill.pend .v{color:#a86a00}
+.cash-month-pill.qi{background:#eef4fc;border-color:#a8c8e8}
+.cash-month-pill.qi .v{color:#1e4a80}
+.cash-month-pill.wu{background:#fff4e6;border-color:#f0c878}
+.cash-month-pill.wu .v{color:#a86a00}
+.cash-month-pill.studio{background:#faf6ee;border-color:#c8b088}
+.cash-month-pill.studio .v{color:#a08560}
+.cash-month-unpaid{font-size:.68rem;color:#a86a00;font-weight:600}
 .cash-row{background:#ffffff;border:1px solid #d8d8d8;border-radius:8px;overflow:hidden;transition:border-color .12s}
 .cash-row:hover{border-color:#7de89a}
 .cash-row-head{display:grid;grid-template-columns:90px 1fr 80px 100px 90px 30px;gap:10px;align-items:center;padding:10px 14px;cursor:pointer;font-size:.78rem}
@@ -7013,6 +7036,22 @@ function clearCashItemOverride(){
   saveCashItemEdit();
 }
 
+// Aggregate splits + payout state for one month's worth of invoices.
+// Reuses computeInvoiceSplit per invoice; adds unpaid 齊/巫 tallies.
+function computeMonthlyAgg(invs){
+  const a={sent:{count:0,amt:0},paid:{count:0,amt:0},qi:0,wu:0,studio:0,cost:0,
+    unpaidQiAmt:0,unpaidWuAmt:0,unpaidQiCount:0,unpaidWuCount:0};
+  invs.forEach(inv=>{
+    if(inv.status==='sent'){a.sent.count++;a.sent.amt+=inv.total||0;}
+    else if(inv.status==='paid'){a.paid.count++;a.paid.amt+=inv.total||0;}
+    const split=computeInvoiceSplit(inv);
+    a.qi+=split.totals.qi;a.wu+=split.totals.wu;
+    a.studio+=split.totals.studio;a.cost+=split.totals.cost;
+    if(split.totals.qi>0&&!inv.payouts?.qi?.paid){a.unpaidQiAmt+=split.totals.qi;a.unpaidQiCount++;}
+    if(split.totals.wu>0&&!inv.payouts?.wu?.paid){a.unpaidWuAmt+=split.totals.wu;a.unpaidWuCount++;}
+  });
+  return a;
+}
 function renderCashflow(){
   refreshCashFilters();
   const list=document.getElementById('cash-list');
@@ -7085,74 +7124,127 @@ function renderCashflow(){
     if(a.status!==b.status)return a.status==='sent'?-1:1;
     return (b.createdAt||0)-(a.createdAt||0);
   });
-  list.innerHTML=invs.map(inv=>{
-    const c=S.clients[inv.clientId];
-    const cName=c?c.name:'(客戶已刪除)';
-    const split=computeInvoiceSplit(inv);
-    const isExpanded=S.cashFilter.expandedIds.has(inv.id);
-    const linesHtml=split.lines.map((l,idx)=>{
-      const csTitle=l.cs?escHtml(l.cs.title||''):'<span class="cash-no-case">手動項目</span>';
-      const ssMark=l.shareStudio?'':'<span title="不與工作室分潤" style="color:#a86a00;font-size:.6rem;margin-left:4px">🚫🏠</span>';
-      // Highlight items whose overrides differ from source case (or that have no case)
-      const overridden=(l.it.laborOwner||l.it.cost!=null||l.it.shareWithStudio!=null||l.it.customSplit);
-      const editBg=overridden?'background:#fff8ee':'';
-      return `<div class="cash-line">
-        <div class="lab">${escHtml(l.it.label||'')}<div class="who">${csTitle} · 負責: ${escHtml(l.labor)}${ssMark}</div></div>
-        <div class="num">$${fmtMoney(l.sub)}</div>
-        <div class="num cost">${l.cost?'-$'+fmtMoney(l.cost):'—'}</div>
-        <div class="num">$${fmtMoney(l.net)}</div>
-        <div class="num split-q">${l.qiCut?'$'+fmtMoney(l.qiCut):'—'}</div>
-        <div class="num split-w">${l.wuCut?'$'+fmtMoney(l.wuCut):'—'}</div>
-        <div class="num split-s">${l.studioCut?'$'+fmtMoney(l.studioCut):'—'}</div>
-        <button class="act-btn" onclick="openCashItemEdit('${inv.id}',${idx})" title="編輯分潤設定" style="padding:2px 4px;${editBg}">✎</button>
-      </div>`;
-    }).join('');
-    // Unpaid indicators — small amber text listing people owed a distribution.
-    // 工作室 is excluded (studio handles 收款 itself, no transfer needed).
-    const unpaidBits=[];
-    if(split.totals.qi>0&&!inv.payouts?.qi?.paid)unpaidBits.push('齊');
-    if(split.totals.wu>0&&!inv.payouts?.wu?.paid)unpaidBits.push('巫');
-    const unpaidHtml=unpaidBits.length?`<span style="font-size:.6rem;color:#a86a00;font-weight:600;margin-left:6px">⏳ ${unpaidBits.map(b=>b+'未付').join(' · ')}</span>`:'';
-    return `<div class="cash-row${isExpanded?' expanded':''}" data-id="${inv.id}">
-      <div class="cash-row-head" onclick="toggleCashRow('${inv.id}')">
-        <div class="ino">${escHtml(inv.invoiceNumber||'')}</div>
-        <div class="cli">${escHtml(cName)}<div style="font-size:.62rem;color:#888;font-family:'JetBrains Mono',monospace;margin-top:2px">${inv.billingMonth||''}</div></div>
-        <div class="mon">${(inv.items||[]).length} 項${unpaidHtml}</div>
-        <div onclick="event.stopPropagation()">
-          <div class="cash-status-toggle">
-            <button class="${inv.status==='sent'?'active sent':''}" onclick="setInvoicePaymentStatus('${inv.id}','sent')">待收</button>
-            <button class="${inv.status==='paid'?'active paid':''}" onclick="setInvoicePaymentStatus('${inv.id}','paid')">已收</button>
-          </div>
-        </div>
-        <div class="amt">$${fmtMoney(inv.total||0)}</div>
-        <div class="chev">▶</div>
-      </div>
-      <div class="cash-row-detail">
-        <div class="cash-line cash-line-hdr">
-          <div>項目</div><div style="text-align:right">金額</div><div style="text-align:right">外包</div><div style="text-align:right">淨額</div><div style="text-align:right">齊</div><div style="text-align:right">巫</div><div style="text-align:right">工作室</div><div></div>
-        </div>
-        ${linesHtml}
-        <div class="cash-totals">
-          <div>合計</div>
-          <div class="num">$${fmtMoney(split.totals.sub)}</div>
-          <div class="num" style="color:#c53030">${split.totals.cost?'-$'+fmtMoney(split.totals.cost):'—'}</div>
-          <div class="num">$${fmtMoney(split.totals.net)}</div>
-          <div class="num" style="color:#1e4a80">$${fmtMoney(split.totals.qi)}</div>
-          <div class="num" style="color:#a86a00">$${fmtMoney(split.totals.wu)}</div>
-          <div class="num" style="color:#a08560">$${fmtMoney(split.totals.studio)}</div>
-          <div></div>
-        </div>
-        <div class="cash-payouts">
-          <div class="lbl" style="text-align:right">付款狀態 →</div>
-          <div></div><div></div><div></div>
-          ${renderPayoutCell(inv.id,'qi',split.totals.qi,inv.payouts?.qi)}
-          ${renderPayoutCell(inv.id,'wu',split.totals.wu,inv.payouts?.wu)}
-          ${renderPayoutCell(inv.id,'studio',split.totals.studio,inv.payouts?.studio)}
-          <div></div>
-        </div>
-      </div>
+  // Decide layout: flat when a specific month is picked or a status is filtered,
+  // grouped-by-month otherwise (matches user's mental model of monthly income)
+  const uniqueMonths=new Set(invs.map(i=>i.billingMonth||''));
+  const useMonthGrouping=(monthSel==='all')&&(statusSel==='all')&&uniqueMonths.size>1;
+  if(useMonthGrouping){
+    // Bucket by billingMonth, preserving sort order
+    const buckets=new Map();
+    invs.forEach(inv=>{
+      const m=inv.billingMonth||'(未指定)';
+      if(!buckets.has(m))buckets.set(m,[]);
+      buckets.get(m).push(inv);
+    });
+    list.innerHTML=[...buckets.entries()].map(([m,ms])=>
+      renderCashMonthSection(m,ms)
+    ).join('');
+  }else{
+    list.innerHTML=invs.map(renderCashInvoiceRow).join('');
+  }
+}
+// Extracted: render one invoice's expandable row + detail block.
+function renderCashInvoiceRow(inv){
+  const c=S.clients[inv.clientId];
+  const cName=c?c.name:'(客戶已刪除)';
+  const split=computeInvoiceSplit(inv);
+  const isExpanded=S.cashFilter.expandedIds.has(inv.id);
+  const linesHtml=split.lines.map((l,idx)=>{
+    const csTitle=l.cs?escHtml(l.cs.title||''):'<span class="cash-no-case">手動項目</span>';
+    const ssMark=l.shareStudio?'':'<span title="不與工作室分潤" style="color:#a86a00;font-size:.6rem;margin-left:4px">🚫🏠</span>';
+    // Highlight items whose overrides differ from source case (or that have no case)
+    const overridden=(l.it.laborOwner||l.it.cost!=null||l.it.shareWithStudio!=null||l.it.customSplit);
+    const editBg=overridden?'background:#fff8ee':'';
+    return `<div class="cash-line">
+      <div class="lab">${escHtml(l.it.label||'')}<div class="who">${csTitle} · 負責: ${escHtml(l.labor)}${ssMark}</div></div>
+      <div class="num">$${fmtMoney(l.sub)}</div>
+      <div class="num cost">${l.cost?'-$'+fmtMoney(l.cost):'—'}</div>
+      <div class="num">$${fmtMoney(l.net)}</div>
+      <div class="num split-q">${l.qiCut?'$'+fmtMoney(l.qiCut):'—'}</div>
+      <div class="num split-w">${l.wuCut?'$'+fmtMoney(l.wuCut):'—'}</div>
+      <div class="num split-s">${l.studioCut?'$'+fmtMoney(l.studioCut):'—'}</div>
+      <button class="act-btn" onclick="openCashItemEdit('${inv.id}',${idx})" title="編輯分潤設定" style="padding:2px 4px;${editBg}">✎</button>
     </div>`;
   }).join('');
+  // Unpaid indicators — small amber text listing people owed a distribution.
+  // 工作室 is excluded (studio handles 收款 itself, no transfer needed).
+  const unpaidBits=[];
+  if(split.totals.qi>0&&!inv.payouts?.qi?.paid)unpaidBits.push('齊');
+  if(split.totals.wu>0&&!inv.payouts?.wu?.paid)unpaidBits.push('巫');
+  const unpaidHtml=unpaidBits.length?`<span style="font-size:.6rem;color:#a86a00;font-weight:600;margin-left:6px">⏳ ${unpaidBits.map(b=>b+'未付').join(' · ')}</span>`:'';
+  return `<div class="cash-row${isExpanded?' expanded':''}" data-id="${inv.id}">
+    <div class="cash-row-head" onclick="toggleCashRow('${inv.id}')">
+      <div class="ino">${escHtml(inv.invoiceNumber||'')}</div>
+      <div class="cli">${escHtml(cName)}<div style="font-size:.62rem;color:#888;font-family:'JetBrains Mono',monospace;margin-top:2px">${inv.billingMonth||''}</div></div>
+      <div class="mon">${(inv.items||[]).length} 項${unpaidHtml}</div>
+      <div onclick="event.stopPropagation()">
+        <div class="cash-status-toggle">
+          <button class="${inv.status==='sent'?'active sent':''}" onclick="setInvoicePaymentStatus('${inv.id}','sent')">待收</button>
+          <button class="${inv.status==='paid'?'active paid':''}" onclick="setInvoicePaymentStatus('${inv.id}','paid')">已收</button>
+        </div>
+      </div>
+      <div class="amt">$${fmtMoney(inv.total||0)}</div>
+      <div class="chev">▶</div>
+    </div>
+    <div class="cash-row-detail">
+      <div class="cash-line cash-line-hdr">
+        <div>項目</div><div style="text-align:right">金額</div><div style="text-align:right">外包</div><div style="text-align:right">淨額</div><div style="text-align:right">齊</div><div style="text-align:right">巫</div><div style="text-align:right">工作室</div><div></div>
+      </div>
+      ${linesHtml}
+      <div class="cash-totals">
+        <div>合計</div>
+        <div class="num">$${fmtMoney(split.totals.sub)}</div>
+        <div class="num" style="color:#c53030">${split.totals.cost?'-$'+fmtMoney(split.totals.cost):'—'}</div>
+        <div class="num">$${fmtMoney(split.totals.net)}</div>
+        <div class="num" style="color:#1e4a80">$${fmtMoney(split.totals.qi)}</div>
+        <div class="num" style="color:#a86a00">$${fmtMoney(split.totals.wu)}</div>
+        <div class="num" style="color:#a08560">$${fmtMoney(split.totals.studio)}</div>
+        <div></div>
+      </div>
+      <div class="cash-payouts">
+        <div class="lbl" style="text-align:right">付款狀態 →</div>
+        <div></div><div></div><div></div>
+        ${renderPayoutCell(inv.id,'qi',split.totals.qi,inv.payouts?.qi)}
+        ${renderPayoutCell(inv.id,'wu',split.totals.wu,inv.payouts?.wu)}
+        ${renderPayoutCell(inv.id,'studio',split.totals.studio,inv.payouts?.studio)}
+        <div></div>
+      </div>
+    </div>
+  </div>`;
+}
+// Render one month bucket: header with mini agg + the month's invoice cards.
+function renderCashMonthSection(month,invs){
+  const a=computeMonthlyAgg(invs);
+  const monthPretty=month.includes('-')?month.replace('-',' / '):month;
+  const total=(a.sent.amt||0)+(a.paid.amt||0);
+  // Build 3 分潤 pills — qi/wu show 未付 under total when > 0
+  const pill=(cls,k,vHtml,uHtml='')=>`<div class="cash-month-pill ${cls}"><div class="k">${k}</div><div class="v">${vHtml}</div>${uHtml}</div>`;
+  const qiUnpaid=a.unpaidQiAmt>0?`<div class="u">未付 $${fmtMoney(a.unpaidQiAmt)}</div>`:'';
+  const wuUnpaid=a.unpaidWuAmt>0?`<div class="u">未付 $${fmtMoney(a.unpaidWuAmt)}</div>`:'';
+  const unpaidLine=(a.unpaidQiCount||a.unpaidWuCount)
+    ?`<div class="cash-month-unpaid">⏳ ${[
+        a.unpaidQiCount?`齊未付 ${a.unpaidQiCount} 張`:'',
+        a.unpaidWuCount?`巫未付 ${a.unpaidWuCount} 張`:''
+      ].filter(Boolean).join(' · ')}</div>`
+    :'';
+  const rowsHtml=invs.map(renderCashInvoiceRow).join('');
+  return `<section class="cash-month">
+    <div class="cash-month-header">
+      <div class="cmh-top">
+        <div class="cmh-title">📅 ${escHtml(monthPretty)}</div>
+        <div class="cmh-meta">${invs.length} 張 · <b>$${fmtMoney(total)}</b></div>
+      </div>
+      <div class="cmh-pills">
+        ${pill('recv','已收',`$${fmtMoney(a.paid.amt)}`,`<div class="u" style="color:#666">${a.paid.count} 張</div>`)}
+        ${pill('pend','待收',`$${fmtMoney(a.sent.amt)}`,`<div class="u" style="color:#666">${a.sent.count} 張</div>`)}
+        ${pill('qi','齊 分潤',`$${fmtMoney(a.qi)}`,qiUnpaid)}
+        ${pill('wu','巫 分潤',`$${fmtMoney(a.wu)}`,wuUnpaid)}
+        ${pill('studio','工作室 分潤',`$${fmtMoney(a.studio)}`)}
+      </div>
+      ${unpaidLine}
+    </div>
+    <div>${rowsHtml}</div>
+  </section>`;
 }
 function renderPayoutCell(invId,who,amount,payout){
   if(!amount)return '<div class="cash-payout-empty">—</div>';
