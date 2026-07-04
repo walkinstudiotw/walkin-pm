@@ -1887,7 +1887,16 @@ function deleteWorkItemObj(id){
 function workItemList(){return Object.values(S.workItems).sort((a,b)=>(a.label||'').localeCompare(b.label||'','zh-TW'));}
 function saveInvoiceObj(inv){
   if(!_fbReady)return;
-  _db.ref(`${ROOT}/invoices/${inv.id}`).set(inv);
+  // Strip undefined keys — Firebase .set() throws on any undefined,
+  // which silently kills the whole write (breaking sync-to-invoice etc)
+  const clean=JSON.parse(JSON.stringify(inv));
+  try{
+    _db.ref(`${ROOT}/invoices/${inv.id}`).set(clean);
+  }catch(e){
+    console.error('saveInvoiceObj failed',e,inv);
+    toast('Invoice 儲存失敗：'+e.message,true);
+    throw e;
+  }
 }
 function deleteInvoiceObj(id){
   _db.ref(`${ROOT}/invoices/${id}`).remove();
@@ -2235,17 +2244,35 @@ function updateCaseAmount(id,val){
 function syncCaseAmountToInvoice(cs){
   if(!cs?.invoiceId)return;
   const inv=S.invoices[cs.invoiceId];
-  if(!inv||!Array.isArray(inv.items))return;
+  if(!inv){
+    toast('⚠️ 案件關聯的 Invoice 已不存在，未同步',true);
+    return;
+  }
+  if(!Array.isArray(inv.items)||!inv.items.length){
+    toast('⚠️ Invoice 沒有項目，未同步',true);
+    return;
+  }
   const addonSum=(cs.pricing?.addons||[]).reduce((s,a)=>s+(a.amount||0)*(a.qty||0),0);
   const newBaseLine=Math.max(0,(cs.pricing?.amount||0)-addonSum);
-  const mainIdx=inv.items.findIndex(it=>it.sourceCaseId===cs.id&&!it.isAddon);
-  if(mainIdx<0)return;
-  if(inv.items[mainIdx].defaultPrice===newBaseLine)return;
+  // Prefer sourceCaseId match; fall back to title match for legacy invoices
+  // whose items don't have sourceCaseId populated
+  let mainIdx=inv.items.findIndex(it=>it.sourceCaseId===cs.id&&!it.isAddon);
+  if(mainIdx<0){
+    mainIdx=inv.items.findIndex(it=>!it.isAddon&&(it.label||'')===(cs.title||''));
+  }
+  if(mainIdx<0){
+    toast(`⚠️ Invoice ${inv.invoiceNumber||''} 找不到對應 line，未同步`,true);
+    return;
+  }
+  const oldPrice=inv.items[mainIdx].defaultPrice;
+  if(oldPrice===newBaseLine)return;  // already in sync — silent no-op
   inv.items[mainIdx].defaultPrice=newBaseLine;
+  // Backfill sourceCaseId so future syncs find this line via the fast path
+  if(!inv.items[mainIdx].sourceCaseId)inv.items[mainIdx].sourceCaseId=cs.id;
   inv.updatedAt=Date.now();
   recomputeInvoiceTotal(inv);
   saveInvoiceObj(inv);
-  toast(`Invoice ${inv.invoiceNumber||''} 金額已同步`);
+  toast(`✅ Invoice ${inv.invoiceNumber||''} 金額 $${fmtMoney(oldPrice)} → $${fmtMoney(newBaseLine)}`);
 }
 function delCase(id){
   const c=S.cases[id];
