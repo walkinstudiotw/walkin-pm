@@ -2076,17 +2076,30 @@ function refreshMonthFilter(){
 }
 
 // ── RENDER: CASES ──────────────────────────────────
+// Resolve a case's real invoice state (data may be stale — an invoice can
+// have been deleted or had its items emptied, leaving the case pointing at
+// nothing). Returns the invoice if the case is actually referenced by it,
+// else null. Also lazily heals stale c.invoiceId writes back to Firebase.
+function resolveCaseInvoice(cs){
+  if(!cs?.invoiceId)return null;
+  const inv=S.invoices[cs.invoiceId];
+  if(!inv||!Array.isArray(inv.items)||!inv.items.some(it=>it.sourceCaseId===cs.id)){
+    // Stale link — clear it once so future renders skip this branch
+    if(cs.invoiceId){cs.invoiceId=null;cs.updatedAt=Date.now();try{saveCaseObj(cs);}catch(e){}}
+    return null;
+  }
+  return inv;
+}
 function filteredCases(){
   let arr=caseList();
   if(S.cf.status==='active')arr=arr.filter(c=>(c.status||'todo')!=='done');
   else if(S.cf.status==='unbilled'){
-    // 未請款：主案件中，(a) 完全沒有關聯 invoice，或
+    // 未請款：主案件中，(a) 沒有真正被任何 invoice 引用，或
     //         (b) 有 invoice 但 invoice 還是草稿（未寄出）
     // 附屬案件會跟主案件請款，不列入
     arr=arr.filter(c=>{
       if(c.linkedToCaseId)return false;
-      if(!c.invoiceId)return true;
-      const inv=S.invoices[c.invoiceId];
+      const inv=resolveCaseInvoice(c);
       return !inv||inv.status==='draft';
     });
   }
@@ -2181,17 +2194,16 @@ function renderCases(){
       </td>
       <td style="text-align:center" onclick="event.stopPropagation()">
         ${(()=>{
-          if(c.invoiceId){
-            const inv=S.invoices[c.invoiceId];
-            if(inv){
-              // Draft invoice = 未寄出 → blue badge，代表已帶入但還沒真正請款
-              const isDraft=inv.status==='draft';
-              const cls=isDraft?'invoiced-badge draft':'invoiced-badge';
-              const emoji=isDraft?'📝':'✅';
-              const tip=isDraft?`Invoice ${escHtml(inv.invoiceNumber||'')} 尚未寄出`:`點擊跳到 Invoice ${escHtml(inv.invoiceNumber||'')}`;
-              return `<span class="${cls}" onclick="jumpToInvoice('${c.invoiceId}')" title="${tip}">${emoji} ${escHtml(inv.invoiceNumber||'已請款')}</span>`;
-            }
-            return `<span class="invoiced-badge stale" title="關聯的 Invoice 已不存在">⚠️ ?</span>`;
+          // Resolve so stale invoiceIds (invoice deleted or its items emptied)
+          // don't keep showing a false 已請款 badge in the list
+          const inv=resolveCaseInvoice(c);
+          if(inv){
+            // Draft invoice = 未寄出 → blue badge，代表已帶入但還沒真正請款
+            const isDraft=inv.status==='draft';
+            const cls=isDraft?'invoiced-badge draft':'invoiced-badge';
+            const emoji=isDraft?'📝':'✅';
+            const tip=isDraft?`Invoice ${escHtml(inv.invoiceNumber||'')} 尚未寄出`:`點擊跳到 Invoice ${escHtml(inv.invoiceNumber||'')}`;
+            return `<span class="${cls}" onclick="jumpToInvoice('${inv.id}')" title="${tip}">${emoji} ${escHtml(inv.invoiceNumber||'已請款')}</span>`;
           }
           return `<span class="muted">—</span>`;
         })()}
@@ -6324,11 +6336,28 @@ function moveInvoiceItem(idx,dir){
 }
 function delInvoiceItem(idx){
   const inv=S.invoices[S.selectedInvoiceId];if(!inv)return;
+  const removed=inv.items[idx];
   inv.items.splice(idx,1);
   inv.updatedAt=Date.now();
   recomputeInvoiceTotal(inv);
   saveInvoiceObj(inv);
+  // If we just removed the last line pointing at a source case, unlink that
+  // case (and its attached children) so it stops showing 已請款 in the case list.
+  const sourceId=removed?.sourceCaseId;
+  if(sourceId&&!inv.items.some(it=>it.sourceCaseId===sourceId)){
+    unlinkCaseFromInvoice(sourceId,inv.id);
+  }
   renderInvoiceEditor();renderInvoicePreview();
+}
+function unlinkCaseFromInvoice(caseId,invId){
+  const cs=S.cases[caseId];
+  if(cs&&cs.invoiceId===invId){cs.invoiceId=null;cs.updatedAt=Date.now();saveCaseObj(cs);}
+  // Cascade to linked children pointing at the same invoice
+  Object.values(S.cases||{}).forEach(child=>{
+    if(child?.linkedToCaseId===caseId&&child.invoiceId===invId){
+      child.invoiceId=null;child.updatedAt=Date.now();saveCaseObj(child);
+    }
+  });
 }
 function confirmDelInvoice(id){
   const inv=S.invoices[id];if(!inv)return;
