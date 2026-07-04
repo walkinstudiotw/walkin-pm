@@ -211,6 +211,8 @@ body{display:flex;flex-direction:column}
 .invoiced-badge.stale{background:#fff4e6;color:#a86a00;border-color:#6a3e00}
 .invoiced-badge.draft{background:#e6f0fa;color:#1e4a80;border-color:#a8c8e8}
 .invoiced-badge.draft:hover{background:#d8e6f5;border-color:#7ea8d8}
+.cnr-option:hover{background:#f5f5f5;border-color:#7de89a}
+.cnr-option:has(input:checked){background:#e8f5ec;border-color:#7de89a}
 
 /* TYPE PILL */
 .type-pill{display:inline-block;padding:1px 7px;border-radius:8px;font-size:.65rem;background:#f5f5f5;color:#666666;border:1px solid #cccccc;font-weight:500}
@@ -1717,6 +1719,35 @@ select.form-select:focus{border-color:#666666}
   </div>
 </div>
 
+<!-- CASE/INVOICE NAME MISMATCH RESOLUTION MODAL -->
+<div class="modal-overlay" id="case-name-resolve-modal">
+  <div class="modal">
+    <div class="modal-title">⚠️ 名稱不符 — 選擇要保留的名稱</div>
+    <p style="font-size:.74rem;color:#888;margin:0 0 12px;line-height:1.5">案件目前的標題與 Invoice 中對應項目的名稱不同。選一個作為正確名稱，系統會把另一邊改成一致。</p>
+    <input type="hidden" id="cnr-case-id" value="">
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <label class="cnr-option" style="display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:1px solid #d8d8d8;border-radius:8px;cursor:pointer;transition:all .12s">
+        <input type="radio" name="cnr-choice" value="case" id="cnr-choice-case" style="margin-top:2px;accent-color:#1e6038">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.66rem;color:#888;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px">案件中的名稱</div>
+          <div id="cnr-case-name" style="font-size:.9rem;color:#1a1a1a;word-break:break-word;font-weight:600">—</div>
+        </div>
+      </label>
+      <label class="cnr-option" style="display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:1px solid #d8d8d8;border-radius:8px;cursor:pointer;transition:all .12s">
+        <input type="radio" name="cnr-choice" value="invoice" id="cnr-choice-invoice" style="margin-top:2px;accent-color:#1e6038">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.66rem;color:#888;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px">Invoice 中的名稱 <span id="cnr-inv-num" style="color:#a08560"></span></div>
+          <div id="cnr-invoice-name" style="font-size:.9rem;color:#1a1a1a;word-break:break-word;font-weight:600">—</div>
+        </div>
+      </label>
+    </div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeM('case-name-resolve-modal')">取消</button>
+      <button class="btn-primary" onclick="applyCaseNameResolution()">套用</button>
+    </div>
+  </div>
+</div>
+
 <!-- INVOICE MONTHLY GENERATE MODAL -->
 <div class="modal-overlay" id="invoice-monthly-modal">
   <div class="modal">
@@ -2098,24 +2129,44 @@ function resolveCaseInvoice(cs){
   const drift=((matched.label||'').trim()!==((cs.title||'').trim()))?'label':'none';
   return {inv,drift};
 }
-// UI action: overwrite the invoice item's label with the case's current title
-// (fixes label drift when the case is legitimately still billed but the
-// invoice line was renamed).
-function syncCaseTitleToInvoiceUi(caseId){
+// UI action: name-mismatch resolver. Shows both names side by side; whichever
+// the user picks becomes the canonical name — the other side is updated to match.
+function openCaseNameResolveUi(caseId){
   const cs=S.cases[caseId];if(!cs)return;
   const inv=cs.invoiceId?S.invoices[cs.invoiceId]:null;
   if(!inv||!Array.isArray(inv.items)){toast('找不到對應 Invoice',true);return;}
   const idx=inv.items.findIndex(it=>it.sourceCaseId===cs.id&&!it.isAddon);
   if(idx<0){toast('Invoice 內找不到對應 line',true);return;}
-  const oldLabel=inv.items[idx].label||'';
-  const newLabel=cs.title||'';
-  if(oldLabel===newLabel){toast('已經同步，無需變更');return;}
-  showConf('同步案件名稱到 Invoice？',`Invoice「${inv.invoiceNumber||''}」中的項目名稱「${oldLabel}」將改為「${newLabel}」。`,()=>{
-    inv.items[idx].label=newLabel;
-    inv.updatedAt=Date.now();
-    saveInvoiceObj(inv);
-    toast('已同步案件名稱');
-  });
+  const caseName=(cs.title||'').trim();
+  const invName=(inv.items[idx].label||'').trim();
+  document.getElementById('cnr-case-id').value=caseId;
+  document.getElementById('cnr-case-name').textContent=caseName||'（空）';
+  document.getElementById('cnr-invoice-name').textContent=invName||'（空）';
+  document.getElementById('cnr-inv-num').textContent=inv.invoiceNumber?`（${inv.invoiceNumber}）`:'';
+  // Default: preselect the invoice-side name so a single click applies it back to the case
+  document.getElementById('cnr-choice-invoice').checked=true;
+  document.getElementById('cnr-choice-case').checked=false;
+  openM('case-name-resolve-modal');
+}
+function applyCaseNameResolution(){
+  const caseId=document.getElementById('cnr-case-id').value;
+  const cs=S.cases[caseId];if(!cs){closeM('case-name-resolve-modal');return;}
+  const inv=cs.invoiceId?S.invoices[cs.invoiceId]:null;
+  if(!inv||!Array.isArray(inv.items)){toast('找不到對應 Invoice',true);closeM('case-name-resolve-modal');return;}
+  const idx=inv.items.findIndex(it=>it.sourceCaseId===cs.id&&!it.isAddon);
+  if(idx<0){toast('Invoice 內找不到對應 line',true);closeM('case-name-resolve-modal');return;}
+  const choice=document.querySelector('input[name="cnr-choice"]:checked')?.value;
+  if(!choice){toast('請選一個名稱',true);return;}
+  const canonical=(choice==='case'?(cs.title||''):(inv.items[idx].label||'')).trim();
+  // Apply to both sides so drift is fully resolved
+  cs.title=canonical;
+  cs.updatedAt=Date.now();
+  saveCaseObj(cs);
+  inv.items[idx].label=canonical;
+  inv.updatedAt=Date.now();
+  saveInvoiceObj(inv);
+  closeM('case-name-resolve-modal');
+  toast(`名稱已統一為「${canonical}」`);
 }
 // UI action: unlink this case from its invoice manually (with confirm).
 function unlinkCaseFromInvoiceUi(caseId){
@@ -2259,10 +2310,11 @@ function renderCases(){
               emoji='✅';
               tip=`點擊跳到 Invoice ${escHtml(inv.invoiceNumber||'')}`;
             }
-            const syncBtn=drift==='label'?`<button class="act-btn" onclick="syncCaseTitleToInvoiceUi('${c.id}')" title="將案件名稱同步到 Invoice 中" style="padding:0 3px;font-size:.7rem;line-height:1;color:#1e6038">🔄</button>`:'';
+            // Drift = label mismatch → clicking the badge opens a picker
+            // to choose which name is canonical (both sides update).
+            const badgeOnClick=drift==='label'?`openCaseNameResolveUi('${c.id}')`:`jumpToInvoice('${inv.id}')`;
             return `<span style="display:inline-flex;align-items:center;gap:3px">
-              <span class="${cls}" onclick="jumpToInvoice('${inv.id}')" title="${tip}">${emoji} ${escHtml(inv.invoiceNumber||'已請款')}</span>
-              ${syncBtn}
+              <span class="${cls}" onclick="${badgeOnClick}" title="${tip}">${emoji} ${escHtml(inv.invoiceNumber||'已請款')}</span>
               <button class="act-btn del" onclick="unlinkCaseFromInvoiceUi('${c.id}')" title="取消請款連結" style="padding:0 3px;font-size:.65rem;line-height:1">✕</button>
             </span>`;
           }
