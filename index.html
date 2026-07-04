@@ -2076,19 +2076,44 @@ function refreshMonthFilter(){
 }
 
 // ── RENDER: CASES ──────────────────────────────────
-// Resolve a case's real invoice state (data may be stale — an invoice can
-// have been deleted or had its items emptied, leaving the case pointing at
-// nothing). Returns the invoice if the case is actually referenced by it,
-// else null. Also lazily heals stale c.invoiceId writes back to Firebase.
+// Resolve a case's real invoice state.
+// Returns:
+//   null    → no live link (was auto-healed if stale)
+//   {inv, drift} where drift='none'|'label' — label drift means the invoice
+//     line exists (matched by sourceCaseId) but its label no longer matches
+//     the case title. Surfaces suspiciously edited lines to the user.
 function resolveCaseInvoice(cs){
   if(!cs?.invoiceId)return null;
   const inv=S.invoices[cs.invoiceId];
-  if(!inv||!Array.isArray(inv.items)||!inv.items.some(it=>it.sourceCaseId===cs.id)){
-    // Stale link — clear it once so future renders skip this branch
+  if(!inv||!Array.isArray(inv.items)){
     if(cs.invoiceId){cs.invoiceId=null;cs.updatedAt=Date.now();try{saveCaseObj(cs);}catch(e){}}
     return null;
   }
-  return inv;
+  const matched=inv.items.find(it=>it.sourceCaseId===cs.id&&!it.isAddon);
+  if(!matched){
+    // No line points at this case — auto-heal by clearing the stale link
+    cs.invoiceId=null;cs.updatedAt=Date.now();try{saveCaseObj(cs);}catch(e){}
+    return null;
+  }
+  const drift=((matched.label||'').trim()!==((cs.title||'').trim()))?'label':'none';
+  return {inv,drift};
+}
+// UI action: unlink this case from its invoice manually (with confirm).
+function unlinkCaseFromInvoiceUi(caseId){
+  const cs=S.cases[caseId];if(!cs)return;
+  const inv=cs.invoiceId?S.invoices[cs.invoiceId]:null;
+  const invLabel=inv?inv.invoiceNumber:'(未知)';
+  showConf('取消請款連結？',`案件「${cs.title||''}」 將解除與 Invoice「${invLabel}」的連結（案件本身不受影響）。若 Invoice 上仍有這筆項目也不會被刪。`,()=>{
+    cs.invoiceId=null;cs.updatedAt=Date.now();
+    saveCaseObj(cs);
+    // Cascade to attached children pointing at the same invoice
+    Object.values(S.cases||{}).forEach(child=>{
+      if(child?.linkedToCaseId===caseId&&child.invoiceId===inv?.id){
+        child.invoiceId=null;child.updatedAt=Date.now();saveCaseObj(child);
+      }
+    });
+    toast('已取消連結');
+  });
 }
 function filteredCases(){
   let arr=caseList();
@@ -2196,14 +2221,29 @@ function renderCases(){
         ${(()=>{
           // Resolve so stale invoiceIds (invoice deleted or its items emptied)
           // don't keep showing a false 已請款 badge in the list
-          const inv=resolveCaseInvoice(c);
-          if(inv){
-            // Draft invoice = 未寄出 → blue badge，代表已帶入但還沒真正請款
+          const res=resolveCaseInvoice(c);
+          if(res){
+            const {inv,drift}=res;
             const isDraft=inv.status==='draft';
-            const cls=isDraft?'invoiced-badge draft':'invoiced-badge';
-            const emoji=isDraft?'📝':'✅';
-            const tip=isDraft?`Invoice ${escHtml(inv.invoiceNumber||'')} 尚未寄出`:`點擊跳到 Invoice ${escHtml(inv.invoiceNumber||'')}`;
-            return `<span class="${cls}" onclick="jumpToInvoice('${inv.id}')" title="${tip}">${emoji} ${escHtml(inv.invoiceNumber||'已請款')}</span>`;
+            // Precedence: drift warning > draft (blue) > sent/paid (green)
+            let cls,emoji,tip;
+            if(drift==='label'){
+              cls='invoiced-badge stale';
+              emoji='⚠️';
+              tip=`名稱不符：Invoice「${escHtml(inv.invoiceNumber||'')}」的對應項目名稱已被改動，可能不再屬於此案件。點×取消連結。`;
+            }else if(isDraft){
+              cls='invoiced-badge draft';
+              emoji='📝';
+              tip=`Invoice ${escHtml(inv.invoiceNumber||'')} 尚未寄出`;
+            }else{
+              cls='invoiced-badge';
+              emoji='✅';
+              tip=`點擊跳到 Invoice ${escHtml(inv.invoiceNumber||'')}`;
+            }
+            return `<span style="display:inline-flex;align-items:center;gap:3px">
+              <span class="${cls}" onclick="jumpToInvoice('${inv.id}')" title="${tip}">${emoji} ${escHtml(inv.invoiceNumber||'已請款')}</span>
+              <button class="act-btn del" onclick="unlinkCaseFromInvoiceUi('${c.id}')" title="取消請款連結" style="padding:0 3px;font-size:.65rem;line-height:1">✕</button>
+            </span>`;
           }
           return `<span class="muted">—</span>`;
         })()}
