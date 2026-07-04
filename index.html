@@ -117,6 +117,11 @@ body{display:flex;flex-direction:column}
 .case-date-input:focus{background:#ffffff;border-color:#7de89a;cursor:text}
 .case-date-input.date-soon{color:#c53030;background:#fde8e8}
 .case-date-input.date-warn{color:#a86a00;background:#fff8ee}
+.case-amount-input{font-family:'JetBrains Mono',monospace;font-size:.72rem;color:#1e6038;font-weight:700;background:transparent;border:1px solid transparent;border-radius:4px;padding:2px 6px;text-align:right;width:88px;cursor:pointer;outline:none;transition:all .12s}
+.case-amount-input:hover{background:#f5f5f5;border-color:#d8d8d8}
+.case-amount-input:focus{background:#ffffff;border-color:#7de89a;cursor:text}
+.case-amount-input::-webkit-inner-spin-button,.case-amount-input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.case-amount-linked-badge{display:block;font-size:.55rem;color:#666;margin-top:1px}
 .date-soon{background:#fde8e8;color:#ff8a8a;padding:2px 6px;border-radius:4px}
 .date-warn{background:#fff4e6;color:#f39c12;padding:2px 6px;border-radius:4px}
 .check-toggle{width:15px;height:15px;accent-color:#666666;cursor:pointer}
@@ -2127,13 +2132,12 @@ function renderCases(){
       amtStr=`<span class="amt-linked" title="附屬於主案件，跟著一起請款">↳ 含於 ${escHtml(parentTitle)}</span>`;
     }else if(c.pricing?.includedIn){
       amtStr=`<span class="amt included">${escHtml(c.pricing.includedIn)}</span>`;
-    }else if(amount){
-      // Show the price + count of attached children (if any)
+    }else{
+      // Editable inline amount (change flows to any linked invoice line)
       const childCount=Object.values(S.cases).filter(x=>x.linkedToCaseId===c.id).length;
       const childBadge=childCount?`<span style="display:block;font-size:.6rem;color:#5a7a8a;margin-top:1px">+ ${childCount} 附屬</span>`:'';
-      amtStr=`<span class="amt">$${fmtMoney(amount)}</span>${childBadge}`;
-    }else{
-      amtStr='<span class="muted">—</span>';
+      const invBadge=c.invoiceId?`<span class="case-amount-linked-badge" title="已在 Invoice ${escHtml(S.invoices[c.invoiceId]?.invoiceNumber||'')} — 改金額會同步">🧾 已連動</span>`:'';
+      amtStr=`<input type="number" class="case-amount-input" value="${amount||0}" onchange="updateCaseAmount('${c.id}',this.value)" title="點擊修改金額；已在 Invoice 中會同步">${childBadge}${invBadge}`;
     }
     return`<tr onclick="openEditCase('${c.id}')">
       <td><span class="ep-num">${escHtml(clientName(c.clientId))}</span></td>
@@ -2142,7 +2146,7 @@ function renderCases(){
       <td onclick="event.stopPropagation()">
         <input type="date" class="case-date-input ${dateCls}" value="${escHtml(c.dueDate||'')}" onchange="updateCaseDate('${c.id}',this.value)" title="點擊修改交期">
       </td>
-      <td>${amtStr}</td>
+      <td onclick="event.stopPropagation()">${amtStr}</td>
       <td class="muted">${escHtml(c.materialNote||'')}</td>
       <td class="muted">${escHtml(c.paymentNote||c.notes||'')}</td>
       <td class="outsource-cell" onclick="event.stopPropagation();toggleOutsource('${c.id}')">
@@ -2213,6 +2217,35 @@ function updateCaseDate(id,val){
   c.dueDate=val||'';
   c.updatedAt=Date.now();
   saveCaseObj(c);
+}
+function updateCaseAmount(id,val){
+  const c=S.cases[id];if(!c)return;
+  if(c.linkedToCaseId||c.pricing?.includedIn)return;  // not editable via inline
+  const newAmount=Math.max(0,parseInt(val)||0);
+  c.pricing=c.pricing||{};
+  c.pricing.amount=newAmount;
+  c.updatedAt=Date.now();
+  saveCaseObj(c);
+  syncCaseAmountToInvoice(c);
+}
+// Push a case's amount change through to its Invoice's main line (if any).
+// case.pricing.amount is stored as the FINAL total (base + addons). The main
+// invoice line only carries the base — addons live on their own lines — so we
+// subtract the case's saved addonSum before writing to the main line.
+function syncCaseAmountToInvoice(cs){
+  if(!cs?.invoiceId)return;
+  const inv=S.invoices[cs.invoiceId];
+  if(!inv||!Array.isArray(inv.items))return;
+  const addonSum=(cs.pricing?.addons||[]).reduce((s,a)=>s+(a.amount||0)*(a.qty||0),0);
+  const newBaseLine=Math.max(0,(cs.pricing?.amount||0)-addonSum);
+  const mainIdx=inv.items.findIndex(it=>it.sourceCaseId===cs.id&&!it.isAddon);
+  if(mainIdx<0)return;
+  if(inv.items[mainIdx].defaultPrice===newBaseLine)return;
+  inv.items[mainIdx].defaultPrice=newBaseLine;
+  inv.updatedAt=Date.now();
+  recomputeInvoiceTotal(inv);
+  saveInvoiceObj(inv);
+  toast(`Invoice ${inv.invoiceNumber||''} 金額已同步`);
 }
 function delCase(id){
   const c=S.cases[id];
@@ -2843,6 +2876,9 @@ function saveCase(){
     updatedAt:Date.now(),
   };
   saveCaseObj(c);
+  // Sync amount change back to the linked invoice line (main line only — addons
+  // still live as separate lines and match case.pricing.addons on Invoice regen)
+  if(!billingLinked)syncCaseAmountToInvoice(c);
   closeM('case-modal');
   toast(S.editCaseId?'已更新':'已新增');
 }
