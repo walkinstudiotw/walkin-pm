@@ -5557,15 +5557,23 @@ function doGenerateMonthlyInvoices(month){
     const id=uid();
     const issuedAt=Date.now();
     const due=new Date();due.setDate(due.getDate()+30);
-    const items=cases.map(cs=>({
-      itemId:uid(),
-      sourceCaseId:cs.id,
-      label:cs.title||'',
-      category:cs.type||'',
-      defaultPrice:cs.pricing?.amount||0,
-      qty:1,
-      unit:'集',
-    }));
+    // Resolve each case's linked workItem so 服務項目 / 類別 / 單位 come through
+    // (matches createBlankInvoice + the Python /pm-month auto path)
+    const items=cases.map(cs=>{
+      const wid=cs.pricing?.quotationItemId||null;
+      const wi=wid?S.workItems[wid]:null;
+      return {
+        itemId:uid(),
+        sourceCaseId:cs.id,
+        sourceWorkItemId:wid,
+        label:cs.title||'',
+        serviceLabel:wi?(wi.label||''):'',
+        category:wi?(wi.category||cs.type||''):(cs.type||''),
+        defaultPrice:cs.pricing?.amount||0,
+        qty:1,
+        unit:wi?(wi.unit||'集'):'集',
+      };
+    });
     const subtotal=items.reduce((s,i)=>s+i.defaultPrice*(i.qty||1),0);
     const defaultTaxRate=c.issuesReceipt?5:0;
     const inv={
