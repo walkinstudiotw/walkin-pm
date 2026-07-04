@@ -625,6 +625,7 @@ select.form-select:focus{border-color:#666666}
     <button class="filter-pill" data-cf-status="doing">執行中</button>
     <button class="filter-pill" data-cf-status="editing">修改中</button>
     <button class="filter-pill" data-cf-status="done">已完成</button>
+    <button class="filter-pill" data-cf-status="unbilled">未請款</button>
     <button class="filter-pill" data-cf-status="all">全部</button>
     <div class="filter-sep"></div>
     <input type="hidden" id="cf-client" value="all">
@@ -2062,6 +2063,10 @@ function refreshMonthFilter(){
 function filteredCases(){
   let arr=caseList();
   if(S.cf.status==='active')arr=arr.filter(c=>(c.status||'todo')!=='done');
+  else if(S.cf.status==='unbilled'){
+    // 未請款：尚未關聯任何 invoice 的主案件（附屬案件會跟主案件請款，不算）
+    arr=arr.filter(c=>!c.invoiceId&&!c.linkedToCaseId);
+  }
   else if(S.cf.status!=='all')arr=arr.filter(c=>(c.status||'todo')===S.cf.status);
   const cl=document.getElementById('cf-client').value;
   if(cl&&cl!=='all')arr=arr.filter(c=>c.clientId===cl);
