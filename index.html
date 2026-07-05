@@ -6,6 +6,7 @@
 <title>WalkIn Studio — 案件 PM</title>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono&display=swap');
@@ -607,9 +608,43 @@ select.form-select:focus{border-color:#666666}
 .qpdf-sign-chop.small{width:54px;height:54px}
 .qpdf-sign-chop.has-img{border:none;background:transparent;padding:0;writing-mode:horizontal-tb;color:transparent}
 .qpdf-sign-chop.has-img img{width:100%;height:100%;object-fit:contain}
+/* ── AUTH GATE ── */
+#auth-gate{position:fixed;inset:0;background:#faf6ee;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px}
+#auth-gate .auth-card{background:#ffffff;border:1px solid #d8c8aa;border-radius:12px;padding:32px 28px;width:100%;max-width:360px;box-shadow:0 8px 24px rgba(90,61,16,.12)}
+#auth-gate .auth-brand{font-size:.8rem;color:#a08560;letter-spacing:.5px;text-transform:uppercase;font-weight:700;margin-bottom:6px}
+#auth-gate .auth-title{font-size:1.2rem;color:#1a1a1a;font-weight:700;margin-bottom:20px}
+#auth-gate .auth-field{margin-bottom:12px}
+#auth-gate .auth-field label{display:block;font-size:.68rem;color:#666;letter-spacing:.4px;font-weight:700;margin-bottom:4px;text-transform:uppercase}
+#auth-gate .auth-field input{width:100%;padding:8px 10px;border:1px solid #d8d8d8;border-radius:6px;font-size:.85rem;font-family:inherit;outline:none;transition:border-color .12s}
+#auth-gate .auth-field input:focus{border-color:#7de89a}
+#auth-gate .auth-btn{width:100%;margin-top:8px;padding:10px;border:1px solid #7de89a;background:#e8f5ec;color:#1e6038;font-weight:700;border-radius:6px;cursor:pointer;font-size:.85rem;transition:all .12s}
+#auth-gate .auth-btn:hover:not(:disabled){background:#d8f0e0}
+#auth-gate .auth-btn:disabled{opacity:.5;cursor:not-allowed}
+#auth-gate .auth-err{margin-top:10px;padding:8px 10px;background:#fde8e8;border:1px solid #e8aaaa;border-radius:6px;color:#c53030;font-size:.72rem;line-height:1.4;display:none}
+#auth-gate .auth-err.show{display:block}
+#auth-gate .auth-hint{margin-top:14px;font-size:.62rem;color:#888;text-align:center;line-height:1.5}
 </style>
 </head>
 <body>
+
+<!-- LOGIN GATE — hides everything until Firebase Auth confirms a signed-in user -->
+<div id="auth-gate">
+  <div class="auth-card">
+    <div class="auth-brand">WalkIn Studio</div>
+    <div class="auth-title">案件 PM · 登入</div>
+    <div class="auth-field">
+      <label for="auth-email">Email</label>
+      <input id="auth-email" type="email" autocomplete="username" placeholder="you@example.com">
+    </div>
+    <div class="auth-field">
+      <label for="auth-pw">密碼</label>
+      <input id="auth-pw" type="password" autocomplete="current-password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doAuthLogin()">
+    </div>
+    <button class="auth-btn" id="auth-submit" onclick="doAuthLogin()">登入</button>
+    <div class="auth-err" id="auth-err"></div>
+    <div class="auth-hint">登入後保持登入狀態，關閉分頁不需重登。</div>
+  </div>
+</div>
 
 <div class="app-shell">
   <aside class="sidebar">
@@ -639,6 +674,7 @@ select.form-select:focus{border-color:#666666}
     </div>
     <div class="sb-bottom">
       <div class="sb-item" onclick="openSettings()"><span class="ico">⚙️</span>設定</div>
+      <div class="sb-item" onclick="doAuthLogout()" title="登出目前帳號"><span class="ico">↩</span>登出</div>
     </div>
   </aside>
   <main class="main">
@@ -1848,8 +1884,12 @@ const _fbConfig={
 };
 firebase.initializeApp(_fbConfig);
 const _db=firebase.database();
+const _auth=firebase.auth();
+// Persist login across tabs / restarts until explicit signOut
+_auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(e=>console.warn('auth persistence:',e));
 const ROOT='walkin-pm';
 let _fbReady=false;
+let _fbInitOnce=false;  // guard so re-auth events don't double-attach listeners
 
 function initFirebase(){
   _db.ref('.info/connected').on('value',snap=>{
@@ -7847,9 +7887,66 @@ function escHtml(s){
   return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// ── AUTH GATE HANDLERS ────────────────────────────
+async function doAuthLogin(){
+  const email=(document.getElementById('auth-email')?.value||'').trim();
+  const pw=document.getElementById('auth-pw')?.value||'';
+  const err=document.getElementById('auth-err');
+  const btn=document.getElementById('auth-submit');
+  if(err){err.textContent='';err.classList.remove('show');}
+  if(!email||!pw){
+    if(err){err.textContent='請輸入 email 和密碼';err.classList.add('show');}
+    return;
+  }
+  if(btn){btn.disabled=true;btn.textContent='登入中…';}
+  try{
+    await _auth.signInWithEmailAndPassword(email,pw);
+    // onAuthStateChanged handles the rest
+  }catch(e){
+    const map={
+      'auth/invalid-email':'Email 格式不正確',
+      'auth/user-not-found':'找不到此帳號',
+      'auth/wrong-password':'密碼錯誤',
+      'auth/invalid-credential':'帳號或密碼錯誤',
+      'auth/too-many-requests':'嘗試次數過多，請稍候再試',
+      'auth/network-request-failed':'網路連線失敗',
+    };
+    if(err){err.textContent='登入失敗：'+(map[e.code]||e.message||e.code);err.classList.add('show');}
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='登入';}
+  }
+}
+function doAuthLogout(){
+  if(!confirm('確定要登出？'))return;
+  _auth.signOut().then(()=>{
+    // reload clears in-memory S and detaches DB listeners so nothing leaks
+    location.reload();
+  });
+}
+function showAuthGate(){
+  const g=document.getElementById('auth-gate');
+  if(g)g.style.display='flex';
+  setTimeout(()=>document.getElementById('auth-email')?.focus(),50);
+}
+function hideAuthGate(){
+  const g=document.getElementById('auth-gate');
+  if(g)g.style.display='none';
+}
+
 // ── INIT ───────────────────────────────────────────
 loadSettings();
-initFirebase();
+// Load settings synchronously; wait for auth before touching Firebase DB.
+_auth.onAuthStateChanged(user=>{
+  if(user){
+    hideAuthGate();
+    if(!_fbInitOnce){
+      _fbInitOnce=true;
+      initFirebase();
+    }
+  }else{
+    showAuthGate();
+  }
+});
 </script>
 </body>
 </html>
