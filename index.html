@@ -6875,7 +6875,7 @@ function buildInvoicePdfHtml(inv,client){
 // ── CASHFLOW MODULE ────────────────────────────────
 // ═══════════════════════════════════════════════════
 // Cashflow filter state
-S.cashFilter={status:'all',expandedIds:new Set()};
+S.cashFilter={status:'all',expandedIds:new Set(),outMode:'month',outPerson:'all'};
 
 function setCashStatusFilter(s){
   S.cashFilter.status=s;
@@ -7286,48 +7286,154 @@ function toggleCashRow(id){
   renderCashflow();
 }
 // ── 應付外包款 by outsourcer ──
+// One outsource case row (used by both grouping modes)
+function renderOutsourceCaseRow(cs){
+  const cost=computeOutsourceCost(cs);
+  const isPaid=!!cs.outsource?.paidAt;
+  const tier=cs.outsource?.tierLabel||'';
+  const rush=cs.outsource?.isRush?' <span style="color:#a86a00;font-size:.6rem">急件</span>':'';
+  const client=S.clients[cs.clientId];
+  const o=S.outsourcers[cs.outsource?.outsourcerId];
+  // In 分月 mode we show the outsourcer's name in the "who" line for context
+  const whoBits=[escHtml(client?.name||'?'),escHtml(tier)+rush];
+  if(o)whoBits.unshift(`🤝 ${escHtml(o.name||'(已刪除)')}`);
+  return `<div class="cash-line" style="grid-template-columns:1fr 90px 80px 100px 90px;cursor:pointer" onclick="openEditCase('${cs.id}')">
+    <div class="lab">${escHtml(cs.title||'(無標題)')}<div class="who">${whoBits.join(' · ')}</div></div>
+    <div class="num" style="font-size:.66rem;color:#888">${cs.dueDate||'—'}</div>
+    <div class="num">$${fmtMoney(cost)}</div>
+    <div onclick="event.stopPropagation()">
+      <div class="cash-status-toggle">
+        <button class="${!isPaid?'active sent':''}" onclick="setOutsourcePaid('${cs.id}',false)">未付</button>
+        <button class="${isPaid?'active paid':''}" onclick="setOutsourcePaid('${cs.id}',true)">已付</button>
+      </div>
+    </div>
+    <div class="num" style="color:${isPaid?'#1e6038':'#c53030'};font-weight:700">$${fmtMoney(cost)}</div>
+  </div>`;
+}
+function setOutMode(mode){
+  if(!['month','person'].includes(mode))return;
+  S.cashFilter.outMode=mode;
+  renderOutsourcePayables();
+}
+function setOutPerson(v){
+  S.cashFilter.outPerson=v||'all';
+  renderOutsourcePayables();
+}
 function renderOutsourcePayables(){
   const el=document.getElementById('cash-outsource-section');
   if(!el)return;
   const monthSel=document.getElementById('cash-filter-month')?.value||'all';
   const allCases=Object.values(S.cases||{}).filter(cs=>cs.isOutsourced&&cs.outsource?.outsourcerId);
-  const cases=monthSel==='all'?allCases:allCases.filter(cs=>cs.dueDate&&cs.dueDate.startsWith(monthSel));
-  if(!cases.length){el.innerHTML='';return;}
+  let cases=monthSel==='all'?allCases:allCases.filter(cs=>cs.dueDate&&cs.dueDate.startsWith(monthSel));
+  // Apply outsource-side filters
+  const mode=S.cashFilter.outMode||'month';
+  const personSel=S.cashFilter.outPerson||'all';
+  if(personSel!=='all')cases=cases.filter(cs=>cs.outsource.outsourcerId===personSel);
+  // Compute grand totals from the (possibly filtered) set
+  let totalAll=0,paidAll=0;
+  cases.forEach(cs=>{const c=computeOutsourceCost(cs);totalAll+=c;if(cs.outsource?.paidAt)paidAll+=c;});
+  const pendAll=totalAll-paidAll;
+  // Build person picker options — always show all people so user can switch
+  const personOptions=[{v:'all',label:'全部外包人員'},
+    ...outsourcerList().map(o=>({v:o.id,label:o.name}))];
+  const personLabel=personOptions.find(o=>o.v===personSel)?.label||'全部外包人員';
+  // Body
+  let bodyHtml='';
+  if(!cases.length){
+    bodyHtml=`<div style="padding:22px;text-align:center;color:#666;font-size:.78rem;background:#f8f8f8;border:1px dashed #d8d8d8;border-radius:8px">此範圍內沒有外包款</div>`;
+  }else if(mode==='month'){
+    bodyHtml=renderOutsourceByMonth(cases);
+  }else{
+    bodyHtml=renderOutsourceByPerson(cases);
+  }
+  // Header controls
+  el.innerHTML=`<div style="margin-top:24px;padding:14px 14px 0;border-top:2px solid #d8d8d8">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px;flex-wrap:wrap">
+      <h3 style="margin:0;font-size:.95rem;color:#1a1a1a">📤 應付外包款</h3>
+      <span style="font-size:.7rem;color:#888">合計 <b style="color:#1a1a1a">$${fmtMoney(totalAll)}</b> · 待付 <b style="color:#c53030">$${fmtMoney(pendAll)}</b> · 已付 <b style="color:#1e6038">$${fmtMoney(paidAll)}</b></span>
+      <span style="flex:1"></span>
+      <div class="cash-status-toggle">
+        <button class="${mode==='month'?'active paid':''}" onclick="setOutMode('month')" title="按交期月份彙整">📅 分月</button>
+        <button class="${mode==='person'?'active paid':''}" onclick="setOutMode('person')" title="按外包人員彙整">🤝 依外包人員</button>
+      </div>
+      <input type="hidden" id="out-person-filter" value="${personSel}">
+      <div class="qi-master-picker" style="width:170px">
+        <button type="button" class="qi-master-trigger" id="out-person-filter-trigger"><span class="qi-master-trigger-text">${escHtml(personLabel)}</span><span class="qi-master-trigger-arrow">▼</span></button>
+      </div>
+    </div>
+    <div class="cash-list" style="padding:0">${bodyHtml}</div>
+  </div>`;
+  // Wire up the person picker (dropdown pattern used elsewhere)
+  if(document.getElementById('out-person-filter-trigger')){
+    buildFlatPicker('out-person-filter','out-person-filter-trigger',
+      ()=>personOptions,
+      (v)=>setOutPerson(v),
+      '全部外包人員');
+  }
+}
+// 分月：group by dueDate YYYY-MM, each month shows totals + case rows.
+// Undated cases fall into '(未設交期)'.
+function renderOutsourceByMonth(cases){
+  const byMonth=new Map();
+  cases.forEach(cs=>{
+    const m=cs.dueDate?cs.dueDate.slice(0,7):'(未設交期)';
+    if(!byMonth.has(m))byMonth.set(m,[]);
+    byMonth.get(m).push(cs);
+  });
+  // Sort months desc, undated last
+  const monthKeys=[...byMonth.keys()].sort((a,b)=>{
+    if(a==='(未設交期)')return 1;
+    if(b==='(未設交期)')return -1;
+    return b.localeCompare(a);
+  });
+  return monthKeys.map(m=>{
+    const csArr=byMonth.get(m).sort((a,b)=>(b.dueDate||'').localeCompare(a.dueDate||''));
+    let total=0,paid=0;
+    csArr.forEach(cs=>{const c=computeOutsourceCost(cs);total+=c;if(cs.outsource?.paidAt)paid+=c;});
+    const pend=total-paid;
+    const mPretty=m.includes('-')?m.replace('-',' / '):m;
+    const rows=csArr.map(renderOutsourceCaseRow).join('');
+    return `<section class="cash-month">
+      <div class="cash-month-header">
+        <div class="cmh-top">
+          <div class="cmh-title">📅 ${escHtml(mPretty)}</div>
+          <div class="cmh-meta">${csArr.length} 案 · 應付 <b>$${fmtMoney(total)}</b></div>
+        </div>
+        <div class="cmh-pills">
+          <div class="cash-month-pill pend"><div class="k">待付</div><div class="v">$${fmtMoney(pend)}</div></div>
+          <div class="cash-month-pill recv"><div class="k">已付</div><div class="v">$${fmtMoney(paid)}</div></div>
+        </div>
+      </div>
+      <div class="cash-row" style="margin:0">
+        <div class="cash-row-detail" style="display:block">
+          <div class="cash-line cash-line-hdr" style="grid-template-columns:1fr 90px 80px 100px 90px">
+            <div>案件</div><div style="text-align:right">交期</div><div style="text-align:right">金額</div><div style="text-align:center">付款狀態</div><div style="text-align:right">小計</div>
+          </div>
+          ${rows}
+        </div>
+      </div>
+    </section>`;
+  }).join('');
+}
+// 依外包人員：existing grouping — one card per outsourcer with their cases inside.
+function renderOutsourceByPerson(cases){
   const byOs=new Map();
   cases.forEach(cs=>{
     const oid=cs.outsource.outsourcerId;
-    const arr=byOs.get(oid)||[];
-    arr.push(cs);
-    byOs.set(oid,arr);
+    const arr=byOs.get(oid)||[];arr.push(cs);byOs.set(oid,arr);
   });
-  let totalAll=0,paidAll=0,pendAll=0;
-  const groupsHtml=[...byOs.entries()].map(([oid,csArr])=>{
+  return [...byOs.entries()].map(([oid,csArr])=>{
     const o=S.outsourcers[oid];
     const oname=o?o.name:'(已刪除)';
     let totalGroup=0,paidGroup=0;
-    const rowsHtml=csArr.sort((a,b)=>(b.dueDate||'').localeCompare(a.dueDate||'')).map(cs=>{
-      const cost=computeOutsourceCost(cs);
-      const isPaid=!!cs.outsource?.paidAt;
-      totalGroup+=cost;
-      if(isPaid)paidGroup+=cost;
-      const tier=cs.outsource?.tierLabel||'';
-      const rush=cs.outsource?.isRush?' <span style="color:#a86a00;font-size:.6rem">急件</span>':'';
-      const client=S.clients[cs.clientId];
-      return `<div class="cash-line" style="grid-template-columns:1fr 90px 80px 100px 90px;cursor:pointer" onclick="openEditCase('${cs.id}')">
-        <div class="lab">${escHtml(cs.title||'(無標題)')}<div class="who">${escHtml(client?.name||'?')} · ${escHtml(tier)}${rush}</div></div>
-        <div class="num" style="font-size:.66rem;color:#888">${cs.dueDate||'—'}</div>
-        <div class="num">$${fmtMoney(cost)}</div>
-        <div onclick="event.stopPropagation()">
-          <div class="cash-status-toggle">
-            <button class="${!isPaid?'active sent':''}" onclick="setOutsourcePaid('${cs.id}',false)">未付</button>
-            <button class="${isPaid?'active paid':''}" onclick="setOutsourcePaid('${cs.id}',true)">已付</button>
-          </div>
-        </div>
-        <div class="num" style="color:${isPaid?'#1e6038':'#c53030'};font-weight:700">${isPaid?'$'+fmtMoney(cost):'$'+fmtMoney(cost)}</div>
-      </div>`;
+    csArr.sort((a,b)=>(b.dueDate||'').localeCompare(a.dueDate||''));
+    const rowsHtml=csArr.map(cs=>{
+      const c=computeOutsourceCost(cs);
+      totalGroup+=c;
+      if(cs.outsource?.paidAt)paidGroup+=c;
+      return renderOutsourceCaseRow(cs);
     }).join('');
     const pendGroup=totalGroup-paidGroup;
-    totalAll+=totalGroup;paidAll+=paidGroup;pendAll+=pendGroup;
     const bankInfo=o?`${o.bank||'(銀行未設)'} ${o.bankAccount||''}`:'';
     return `<div class="cash-row" style="margin-bottom:8px">
       <div class="cash-row-head" style="cursor:default">
@@ -7345,13 +7451,6 @@ function renderOutsourcePayables(){
       </div>
     </div>`;
   }).join('');
-  el.innerHTML=`<div style="margin-top:24px;padding:14px 14px 0;border-top:2px solid #d8d8d8">
-    <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px">
-      <h3 style="margin:0;font-size:.95rem;color:#1a1a1a">📤 應付外包款</h3>
-      <span style="font-size:.7rem;color:#888">合計 <b style="color:#1a1a1a">$${fmtMoney(totalAll)}</b> · 待付 <b style="color:#c53030">$${fmtMoney(pendAll)}</b> · 已付 <b style="color:#1e6038">$${fmtMoney(paidAll)}</b></span>
-    </div>
-    <div class="cash-list" style="padding:0">${groupsHtml}</div>
-  </div>`;
 }
 function setOutsourcePaid(caseId,paid){
   const cs=S.cases[caseId];if(!cs||!cs.outsource)return;
