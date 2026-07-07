@@ -623,6 +623,62 @@ select.form-select:focus{border-color:#666666}
 #auth-gate .auth-err{margin-top:10px;padding:8px 10px;background:#fde8e8;border:1px solid #e8aaaa;border-radius:6px;color:#c53030;font-size:.72rem;line-height:1.4;display:none}
 #auth-gate .auth-err.show{display:block}
 #auth-gate .auth-hint{margin-top:14px;font-size:.62rem;color:#888;text-align:center;line-height:1.5}
+
+/* ════ MOBILE (≤768px) — desktop CSS untouched, overrides only ════ */
+#mobile-menu-btn{display:none;background:none;border:1px solid #d8d8d8;border-radius:6px;padding:6px 10px;font-size:1rem;color:#1a1a1a;cursor:pointer;line-height:1}
+#sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:790}
+@media (max-width:768px){
+  /* base scale-down: everything is rem-based so this shrinks the whole UI */
+  html,body{font-size:16px}
+  /* sidebar → off-canvas drawer */
+  .sidebar{position:fixed;left:-260px;top:0;bottom:0;width:240px;z-index:800;transition:left .22s ease;box-shadow:2px 0 12px rgba(0,0,0,.15)}
+  body.sb-open .sidebar{left:0}
+  body.sb-open #sidebar-backdrop{display:block}
+  #mobile-menu-btn{display:inline-flex;align-items:center}
+  .main{width:100vw}
+  .main-header{padding:0 10px;gap:8px;height:52px}
+  .main-header .main-actions{gap:5px}
+  .main-header .nav-btn{padding:5px 8px;font-size:.7rem}
+  /* filter bar: dropdowns flex instead of fixed widths */
+  .filter-bar{padding:6px 10px;gap:5px}
+  .filter-bar .qi-master-picker{flex:1 1 130px;min-width:120px;width:auto!important}
+  /* tables keep min-width → swipe horizontally; scroll-body already overflow-x:auto */
+  .scroll-body{-webkit-overflow-scrolling:touch}
+  /* invoice: editing layout stacks vertically, page scrolls */
+  .inv-layout.editing{grid-template-columns:1fr;grid-auto-rows:auto;height:auto;overflow-y:auto}
+  .inv-layout.editing .inv-list-wrap{display:none}   /* editing on phone: editor + preview only; ← 返回列表 button exits */
+  .inv-editor-wrap{border-right:none;border-bottom:1px solid #e8e8e8;overflow:visible}
+  .inv-layout{height:auto;min-height:100%;overflow-y:auto}
+  /* quote: 2-col → stacked, preview below */
+  .quote-layout{grid-template-columns:1fr;grid-auto-rows:auto;height:auto;overflow-y:auto}
+  .quote-preview-wrap{border-top:2px solid #d8d8d8;max-height:none}
+  /* tab panels that pinned height for inner scrolling → let page scroll */
+  .tab-panel{overflow-y:auto}
+  /* cashflow: 8-col detail grid swipes horizontally */
+  .cash-row-detail{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .cash-row-detail>.cash-line,.cash-row-detail>.cash-totals,.cash-row-detail>.cash-payouts{min-width:640px}
+  .cash-summary{grid-template-columns:repeat(2,1fr);padding:10px}
+  .cash-row-head{grid-template-columns:70px 1fr 70px auto;gap:6px;padding:9px 10px}
+  .cash-row-head .amt{grid-column:4}
+  .cash-row-head .mon,.cash-row-head .chev{display:none}
+  .cash-month-header{padding:10px 12px}
+  /* modals: form grids stack; tighter padding */
+  .modal{padding:14px 12px;max-height:92vh}
+  .form-row,.form-row-3{grid-template-columns:1fr}
+  #quote-item-modal .form-row,#quote-item-modal .form-row-3{grid-template-columns:1fr}
+  /* touch targets */
+  .act-btn{padding:8px 10px;font-size:1rem}
+  .check-toggle{width:22px;height:22px}
+  .sb-sub-cat .sb-cat-actions,.wi-side-item .cat-actions{opacity:1}
+  .sb-item{padding:12px 14px 12px 17px}
+  /* iOS: inputs <16px trigger auto-zoom on focus — force 16px */
+  input,select,textarea{font-size:16px!important}
+  /* case list inline editors get room to breathe */
+  .case-date-input{width:140px;padding:6px 8px}
+  .case-amount-input{width:96px;padding:6px 8px}
+  /* client cards single column */
+  .client-grid{grid-template-columns:1fr}
+}
 </style>
 </head>
 <body>
@@ -645,6 +701,8 @@ select.form-select:focus{border-color:#666666}
     <div class="auth-hint">登入後保持登入狀態，關閉分頁不需重登。</div>
   </div>
 </div>
+
+<div id="sidebar-backdrop" onclick="closeMobileSidebar()"></div>
 
 <div class="app-shell">
   <aside class="sidebar">
@@ -673,12 +731,13 @@ select.form-select:focus{border-color:#666666}
       </div>
     </div>
     <div class="sb-bottom">
-      <div class="sb-item" onclick="openSettings()"><span class="ico">⚙️</span>設定</div>
-      <div class="sb-item" onclick="doAuthLogout()" title="登出目前帳號"><span class="ico">↩</span>登出</div>
+      <div class="sb-item" onclick="closeMobileSidebar();openSettings()"><span class="ico">⚙️</span>設定</div>
+      <div class="sb-item" onclick="closeMobileSidebar();doAuthLogout()" title="登出目前帳號"><span class="ico">↩</span>登出</div>
     </div>
   </aside>
   <main class="main">
     <div class="main-header">
+      <button id="mobile-menu-btn" onclick="toggleMobileSidebar()" title="選單">☰</button>
       <div class="main-title" id="main-title"><span class="ico">📋</span><span id="main-title-text">案件</span></div>
       <div class="main-actions">
         <button class="nav-btn primary" id="add-btn" onclick="openAddCase()">＋ 新增案件</button>
@@ -2091,7 +2150,11 @@ const TAB_META={
   invoices:{ico:'🧾',label:'Invoice',addBtn:null},
   cashflow:{ico:'💵',label:'金流',addBtn:null},
 };
+// ── MOBILE SIDEBAR DRAWER ──
+function toggleMobileSidebar(){document.body.classList.toggle('sb-open');}
+function closeMobileSidebar(){document.body.classList.remove('sb-open');}
 function switchTab(n){
+  closeMobileSidebar();  // picking a tab on mobile closes the drawer
   document.querySelectorAll('.sb-item[data-tab]').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(x=>x.classList.remove('active'));
   document.querySelector('.sb-item[data-tab="'+n+'"]')?.classList.add('active');
