@@ -7004,11 +7004,25 @@ function refreshCashFilters(){
 // Compute split for a single invoice. Returns {lines, totals}
 function computeInvoiceSplit(inv){
   const items=inv.items||[];
-  const lines=items.map(it=>{
-    const sub=(it.defaultPrice||0)*(it.qty==null?1:it.qty);
+  // Group each non-addon parent with its consecutive isAddon items — the split
+  // is computed on the group's combined amount, so discounts/加價 actually
+  // flow into 分潤 (a standalone negative addon line used to clamp to net=0
+  // and silently never reduce anyone's cut).
+  const lines=[];
+  let i=0;
+  while(i<items.length){
+    const it=items[i];
+    let sub=(it.defaultPrice||0)*(it.qty==null?1:it.qty);
+    let addonCount=0;
+    let j=i+1;
+    if(!it.isAddon){
+      while(j<items.length&&items[j].isAddon){
+        sub+=(items[j].defaultPrice||0)*(items[j].qty==null?1:items[j].qty);
+        addonCount++;j++;
+      }
+    }
     const cs=it.sourceCaseId?S.cases[it.sourceCaseId]:null;
-    // Per-item overrides win over the source case (so manual items can have 負責/外包/分潤 set
-    // without a sourceCase, and case-sourced items can still be overridden per invoice line)
+    // Per-item overrides (on the parent) win over the source case
     const cost=(it.cost!=null)
       ?(parseInt(it.cost)||0)
       :(cs?(cs.isOutsourced?computeOutsourceCost(cs):(cs.cost||0)):0);
@@ -7040,8 +7054,9 @@ function computeInvoiceSplit(inv){
       else if(labor==='巫')wuCut=net;
       else studioCut=net;
     }
-    return {it,sub,cs,cost,labor,shareStudio,net,qiCut,wuCut,studioCut};
-  });
+    lines.push({it,itemIdx:i,addonCount,sub,cs,cost,labor,shareStudio,net,qiCut,wuCut,studioCut});
+    i=(j>i+1)?j:i+1;
+  }
   const totals=lines.reduce((acc,l)=>{
     acc.sub+=l.sub;acc.cost+=l.cost;acc.net+=l.net;
     acc.qi+=l.qiCut;acc.wu+=l.wuCut;acc.studio+=l.studioCut;
@@ -7252,21 +7267,23 @@ function renderCashInvoiceRow(inv){
   const cName=c?c.name:'(客戶已刪除)';
   const split=computeInvoiceSplit(inv);
   const isExpanded=S.cashFilter.expandedIds.has(inv.id);
-  const linesHtml=split.lines.map((l,idx)=>{
+  const linesHtml=split.lines.map(l=>{
     const csTitle=l.cs?escHtml(l.cs.title||''):'<span class="cash-no-case">手動項目</span>';
     const ssMark=l.shareStudio?'':'<span title="不與工作室分潤" style="color:#a86a00;font-size:.6rem;margin-left:4px">🚫🏠</span>';
+    // Merged-addon hint so the user knows this amount already includes them
+    const addonMark=l.addonCount?`<span style="color:#a08560;font-size:.6rem;margin-left:4px" title="金額已含加減項">· 含 ${l.addonCount} 加減項</span>`:'';
     // Highlight items whose overrides differ from source case (or that have no case)
     const overridden=(l.it.laborOwner||l.it.cost!=null||l.it.shareWithStudio!=null||l.it.customSplit);
     const editBg=overridden?'background:#fff8ee':'';
     return `<div class="cash-line">
-      <div class="lab">${escHtml(l.it.label||'')}<div class="who">${csTitle} · 負責: ${escHtml(l.labor)}${ssMark}</div></div>
+      <div class="lab">${escHtml(l.it.label||'')}<div class="who">${csTitle} · 負責: ${escHtml(l.labor)}${ssMark}${addonMark}</div></div>
       <div class="num">$${fmtMoney(l.sub)}</div>
       <div class="num cost">${l.cost?'-$'+fmtMoney(l.cost):'—'}</div>
       <div class="num">$${fmtMoney(l.net)}</div>
       <div class="num split-q">${l.qiCut?'$'+fmtMoney(l.qiCut):'—'}</div>
       <div class="num split-w">${l.wuCut?'$'+fmtMoney(l.wuCut):'—'}</div>
       <div class="num split-s">${l.studioCut?'$'+fmtMoney(l.studioCut):'—'}</div>
-      <button class="act-btn" onclick="openCashItemEdit('${inv.id}',${idx})" title="編輯分潤設定" style="padding:2px 4px;${editBg}">✎</button>
+      <button class="act-btn" onclick="openCashItemEdit('${inv.id}',${l.itemIdx})" title="編輯分潤設定" style="padding:2px 4px;${editBg}">✎</button>
     </div>`;
   }).join('');
   // Unpaid indicators — small amber text listing people owed a distribution.
