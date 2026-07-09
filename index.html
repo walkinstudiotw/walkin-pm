@@ -3756,15 +3756,16 @@ function renderWimAddons(){
   el.innerHTML=_wimAddons.map((a,i)=>{
     const isNeg=(a.amount||0)<0;
     // Toggle .amt-neg class inline (no re-render) so focus / cursor doesn't jump on each keystroke
-    return`<div class="sub-row">
+    return`<div class="sub-row" style="display:grid;grid-template-columns:1fr 90px 70px 24px;gap:5px;align-items:center">
       <input type="text" placeholder="加減項名稱（例：+10min、-早鳥折扣）" value="${escHtml(a.label)}" oninput="_wimAddons[${i}].label=this.value">
       <input type="number" class="amt ${isNeg?'amt-neg':''}" placeholder="金額（負=折扣）" value="${a.amount||0}" oninput="_wimAddons[${i}].amount=parseInt(this.value)||0;this.classList.toggle('amt-neg',(parseInt(this.value)||0)<0)">
+      <input type="text" placeholder="單位（可選）" value="${escHtml(a.unit||'')}" oninput="_wimAddons[${i}].unit=this.value" title="顯示在報價單／Invoice 的單位欄">
       <button class="x-btn" onclick="removeAddonRow(${i})" title="刪除">✕</button>
     </div>`;
   }).join('');
 }
 function addAddonRow(){
-  _wimAddons.push({id:uid(),label:'',amount:0});
+  _wimAddons.push({id:uid(),label:'',amount:0,unit:''});
   renderWimAddons();
 }
 function removeAddonRow(i){_wimAddons.splice(i,1);renderWimAddons();}
@@ -3819,7 +3820,7 @@ function saveWorkItem(){
     const hasUnit=(s.unit||'').trim();
     return hasLabel||hasPrice||hasUnit;
   }).map(s=>({id:s.id||uid(),label:(s.label||'').trim(),price:parseInt(s.price)||0,unit:(s.unit||'').trim()}));
-  const adds=_wimAddons.filter(a=>a.label&&a.label.trim()).map(a=>({id:a.id||uid(),label:a.label.trim(),amount:parseInt(a.amount)||0}));
+  const adds=_wimAddons.filter(a=>a.label&&a.label.trim()).map(a=>({id:a.id||uid(),label:a.label.trim(),amount:parseInt(a.amount)||0,unit:(a.unit||'').trim()}));
   const id=S.editWorkItemId||uid();
   saveWorkItemObj({
     id,label,
@@ -4611,7 +4612,7 @@ function saveQuoteItem(){
             category:item.category,
             defaultPrice:a.amount||0,
             qty:1,
-            unit:'',
+            unit:a.unit||'',
             isAddon:true,
             workItemId:wid,
             addonId:a.id,
@@ -4645,7 +4646,7 @@ function saveQuoteItem(){
             category:(w.category||'').trim()||category||'未分類',
             defaultPrice:a.amount||0,
             qty:1,
-            unit:'',
+            unit:a.unit||'',
             isAddon:true,
             workItemId:wid,
             addonId:a.id,
@@ -4671,7 +4672,7 @@ function saveQuoteItem(){
             category,
             defaultPrice:a.amount||0,
             qty:1,
-            unit:'',
+            unit:a.unit||'',
             isAddon:true,
             workItemId:wid,
             addonId:a.id,
@@ -5790,8 +5791,10 @@ function createBlankInvoice(clientId,billingMonth,prefixOverride,seedCases){
       qty:1,
       unit:effectiveWi?(effectiveWi.unit||'集'):'集',
     });
-    // Bring in any addons saved on the case (qty>0) as separate Invoice line items
+    // Bring in any addons saved on the case (qty>0) as separate Invoice line items.
+    // Case addons don't store unit — resolve from the work item's addon definition.
     caseAddons.forEach(a=>{
+      const addonDef=effectiveWi?(effectiveWi.addons||[]).find(x=>x.id===a.addonId):null;
       items.push({
         itemId:uid(),
         sourceCaseId:cs.id,
@@ -5802,7 +5805,7 @@ function createBlankInvoice(clientId,billingMonth,prefixOverride,seedCases){
         category:effectiveWi?(effectiveWi.category||cs.type||''):(cs.type||''),
         defaultPrice:a.amount||0,
         qty:a.qty,
-        unit:'',
+        unit:addonDef?.unit||'',
         isAddon:true,
       });
     });
@@ -6266,6 +6269,7 @@ function confirmAddCasesToInvoice(){
       unit:w?(w.unit||'集'):'集',
     });
     caseAddons.forEach(a=>{
+      const addonDef=w?(w.addons||[]).find(x=>x.id===a.addonId):null;
       inv.items.push({
         itemId:uid(),
         sourceCaseId:cs.id,
@@ -6276,7 +6280,7 @@ function confirmAddCasesToInvoice(){
         category:w?(w.category||cs.type||''):(cs.type||''),
         defaultPrice:a.amount||0,
         qty:a.qty,
-        unit:'',
+        unit:addonDef?.unit||'',
         isAddon:true,
       });
     });
@@ -6568,7 +6572,7 @@ function saveInvoiceItemFromModal(){
       category,
       defaultPrice:a.amount||0,
       qty:1,
-      unit:'',
+      unit:a.unit||'',
       sourceWorkItemId:wid||null,
       sourceAddonId:a.id,
       isAddon:true,
