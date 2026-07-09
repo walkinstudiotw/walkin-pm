@@ -1411,10 +1411,15 @@ select.form-select:focus{border-color:#666666}
     <!-- Bundle children preview (visible when master is a Bundle) -->
     <div class="qi-bundle-preview" id="qi-bundle-preview" style="display:none;background:#f3e8fc;border:1px dashed #c0a0d8;border-radius:7px;padding:10px 12px;flex-direction:column;gap:6px"></div>
 
-    <!-- Sub-items picker (visible when master item has sub-items) -->
+    <!-- Sub-items picker + inline creation -->
     <div class="qi-sub-section" id="qi-sub-section" style="display:none">
-      <div class="sec-title">📦 選擇子項目</div>
+      <div class="sec-title" style="display:flex;align-items:center;justify-content:space-between">
+        <span>📦 選擇子項目</span>
+        <button type="button" class="add-btn" onclick="addQiCustomSub()" style="font-size:.64rem;padding:2px 8px">＋ 自訂子項目</button>
+      </div>
       <div class="qi-sub-options" id="qi-sub-options"></div>
+      <div id="qi-sub-custom-list" style="display:flex;flex-direction:column;gap:4px"></div>
+      <div id="qi-sub-custom-hint" style="display:none;font-size:.6rem;color:#888">自訂子項目會存入工作項目庫的定義（供之後選用）</div>
     </div>
 
     <div class="form-group full">
@@ -1440,10 +1445,14 @@ select.form-select:focus{border-color:#666666}
       </div>
     </div>
 
-    <!-- Addons toggle (visible when master item has addons) -->
+    <!-- Addons: pick from library + inline creation -->
     <div class="qi-addon-section" id="qi-addon-section" style="display:none">
-      <div class="sec-title">➕ 加減項（勾選後會新增為獨立項目列）</div>
+      <div class="sec-title" style="display:flex;align-items:center;justify-content:space-between">
+        <span>➕ 加減項（附加在此項目下，金額併入小計）</span>
+        <button type="button" class="add-btn" onclick="addQiCustomAddon()" style="font-size:.64rem;padding:2px 8px">＋ 自訂加減項</button>
+      </div>
       <div id="qi-addon-list"></div>
+      <div id="qi-addon-custom-list" style="display:flex;flex-direction:column;gap:4px"></div>
     </div>
 
     <div class="form-group full" id="qi-sync-row">
@@ -4399,6 +4408,44 @@ function setQiMaster(wid,label){
 // Track selected sub-item id and addon ids in current quote-item modal
 let _qiSelectedSubId=null;
 let _qiSelectedAddonIds=new Set();
+// In-modal custom definitions (created on the fly, synced to the work item on save)
+let _qiCustomSubs=[];
+let _qiCustomAddons=[];
+function addQiCustomSub(){
+  _qiCustomSubs.push({label:'',price:0,unit:''});
+  renderQiCustomSubs();
+}
+function removeQiCustomSub(i){_qiCustomSubs.splice(i,1);renderQiCustomSubs();}
+function renderQiCustomSubs(){
+  const el=document.getElementById('qi-sub-custom-list');
+  const hint=document.getElementById('qi-sub-custom-hint');
+  if(!el)return;
+  if(hint)hint.style.display=_qiCustomSubs.length?'block':'none';
+  el.innerHTML=_qiCustomSubs.map((s,i)=>`<div style="display:grid;grid-template-columns:1fr 90px 70px 24px;gap:5px;align-items:center">
+    <input class="form-input" type="text" placeholder="子項目名稱（例：1 軌）" value="${escHtml(s.label)}" oninput="_qiCustomSubs[${i}].label=this.value" style="padding:4px 8px;font-size:.72rem">
+    <input class="form-input" type="number" placeholder="單價" value="${s.price||0}" oninput="_qiCustomSubs[${i}].price=parseInt(this.value)||0" style="padding:4px 8px;font-size:.72rem;text-align:right">
+    <input class="form-input" type="text" placeholder="單位" value="${escHtml(s.unit||'')}" oninput="_qiCustomSubs[${i}].unit=this.value" style="padding:4px 8px;font-size:.72rem;text-align:center">
+    <button class="x-btn" onclick="removeQiCustomSub(${i})" title="刪除">✕</button>
+  </div>`).join('');
+}
+function addQiCustomAddon(){
+  _qiCustomAddons.push({label:'',amount:0,unit:''});
+  renderQiCustomAddons();
+}
+function removeQiCustomAddon(i){_qiCustomAddons.splice(i,1);renderQiCustomAddons();}
+function renderQiCustomAddons(){
+  const el=document.getElementById('qi-addon-custom-list');
+  if(!el)return;
+  el.innerHTML=_qiCustomAddons.map((a,i)=>{
+    const isNeg=(a.amount||0)<0;
+    return `<div style="display:grid;grid-template-columns:1fr 90px 70px 24px;gap:5px;align-items:center">
+      <input class="form-input" type="text" placeholder="加減項名稱（例：+10min）" value="${escHtml(a.label)}" oninput="_qiCustomAddons[${i}].label=this.value" style="padding:4px 8px;font-size:.72rem">
+      <input class="form-input" type="number" placeholder="金額（負=折扣）" value="${a.amount||0}" oninput="_qiCustomAddons[${i}].amount=parseInt(this.value)||0;this.style.color=(parseInt(this.value)||0)<0?'#c53030':'#1e6038'" style="padding:4px 8px;font-size:.72rem;text-align:right;color:${isNeg?'#c53030':'#1e6038'}">
+      <input class="form-input" type="text" placeholder="單位" value="${escHtml(a.unit||'')}" oninput="_qiCustomAddons[${i}].unit=this.value" style="padding:4px 8px;font-size:.72rem;text-align:center">
+      <button class="x-btn" onclick="removeQiCustomAddon(${i})" title="刪除">✕</button>
+    </div>`;
+  }).join('');
+}
 function onQiFromMasterChange(){
   const wid=document.getElementById('qi-from-master').value;
   const subSec=document.getElementById('qi-sub-section');
@@ -4406,7 +4453,17 @@ function onQiFromMasterChange(){
   const bundleSec=document.getElementById('qi-bundle-preview');
   _qiSelectedSubId=null;
   _qiSelectedAddonIds=new Set();
-  if(!wid){subSec.style.display='none';addSec.style.display='none';if(bundleSec)bundleSec.style.display='none';return;}
+  _qiCustomSubs=[];_qiCustomAddons=[];
+  renderQiCustomSubs();renderQiCustomAddons();
+  if(!wid){
+    // Custom item: sections stay visible so user can define addons/sub-items inline
+    subSec.style.display='flex';
+    addSec.style.display='flex';
+    document.getElementById('qi-sub-options').innerHTML='<div style="font-size:.66rem;color:#888">此項目尚無子項目 — 可用右上「＋ 自訂子項目」新增</div>';
+    document.getElementById('qi-addon-list').innerHTML='<div style="font-size:.66rem;color:#888">此項目尚無加減項 — 可用右上「＋ 自訂加減項」新增</div>';
+    if(bundleSec)bundleSec.style.display='none';
+    return;
+  }
   const w=S.workItems[wid];if(!w)return;
   ensureWorkItemDefaults(w);
   document.getElementById('qi-label').value=w.label||'';
@@ -4452,17 +4509,18 @@ function onQiFromMasterChange(){
     }
   }else{
     if(bundleSec)bundleSec.style.display='none';
+    // Sections always visible — library options if any, plus inline creation
+    subSec.style.display='flex';
     if(w.subItems?.length){
-      subSec.style.display='flex';
       renderQiSubOptions(w);
     }else{
-      subSec.style.display='none';
+      document.getElementById('qi-sub-options').innerHTML='<div style="font-size:.66rem;color:#888">此項目尚無子項目 — 可用右上「＋ 自訂子項目」新增</div>';
     }
+    addSec.style.display='flex';
     if(w.addons?.length){
-      addSec.style.display='flex';
       renderQiAddons(w);
     }else{
-      addSec.style.display='none';
+      document.getElementById('qi-addon-list').innerHTML='<div style="font-size:.66rem;color:#888">此項目尚無加減項 — 可用右上「＋ 自訂加減項」新增</div>';
     }
   }
 }
@@ -4522,9 +4580,11 @@ function openAddQuoteItem(){
   document.getElementById('qi-unit').value='';
   document.getElementById('qi-sync').checked=true;
   document.getElementById('qi-sync-row').style.display='block';
-  document.getElementById('qi-sub-section').style.display='none';
-  document.getElementById('qi-addon-section').style.display='none';
   _qiSelectedSubId=null;_qiSelectedAddonIds=new Set();
+  _qiCustomSubs=[];_qiCustomAddons=[];
+  renderQiCustomSubs();renderQiCustomAddons();
+  // Sections visible from the start (empty-state hints + inline creation)
+  onQiFromMasterChange();
   openM('quote-item-modal');
 }
 function openEditQuoteItem(iid){
@@ -4546,27 +4606,28 @@ function openEditQuoteItem(iid){
   document.getElementById('qi-qty').value=it.qty==null?1:it.qty;
   document.getElementById('qi-unit').value=it.unit||'';
   document.getElementById('qi-sync-row').style.display='none';
-  document.getElementById('qi-sub-section').style.display='none';
-  document.getElementById('qi-addon-section').style.display='none';
   _qiSelectedSubId=it.subItemId||null;
+  _qiCustomSubs=[];_qiCustomAddons=[];
+  renderQiCustomSubs();renderQiCustomAddons();
   // Pre-check addons that already exist in the quote (rows linked to this same workItemId)
   _qiSelectedAddonIds=new Set();
   if(wid){
     items.filter(x=>x.isAddon&&x.workItemId===wid).forEach(x=>{
       if(x.addonId)_qiSelectedAddonIds.add(x.addonId);
     });
-    // Render the addon/sub sections based on the master
-    if(w){
-      ensureWorkItemDefaults(w);
-      if(w.subItems?.length){
-        document.getElementById('qi-sub-section').style.display='flex';
-        renderQiSubOptions(w);
-      }
-      if(w.addons?.length){
-        document.getElementById('qi-addon-section').style.display='flex';
-        renderQiAddons(w);
-      }
-    }
+  }
+  // Sections always visible: library options (with checked state) + inline creation
+  document.getElementById('qi-sub-section').style.display='flex';
+  document.getElementById('qi-addon-section').style.display='flex';
+  if(w){
+    ensureWorkItemDefaults(w);
+    if(w.subItems?.length)renderQiSubOptions(w);
+    else document.getElementById('qi-sub-options').innerHTML='<div style="font-size:.66rem;color:#888">此項目尚無子項目 — 可用右上「＋ 自訂子項目」新增</div>';
+    if(w.addons?.length)renderQiAddons(w);
+    else document.getElementById('qi-addon-list').innerHTML='<div style="font-size:.66rem;color:#888">此項目尚無加減項 — 可用右上「＋ 自訂加減項」新增</div>';
+  }else{
+    document.getElementById('qi-sub-options').innerHTML='<div style="font-size:.66rem;color:#888">此項目尚無子項目 — 可用右上「＋ 自訂子項目」新增</div>';
+    document.getElementById('qi-addon-list').innerHTML='<div style="font-size:.66rem;color:#888">此項目尚無加減項 — 可用右上「＋ 自訂加減項」新增</div>';
   }
   openM('quote-item-modal');
 }
@@ -4597,16 +4658,40 @@ function saveQuoteItem(){
     if(existing?.workItemId)item.workItemId=existing.workItemId;
     if(existing?.subItemId)item.subItemId=existing.subItemId;
   }
+  // Valid in-modal custom definitions — ids assigned up front so quote lines
+  // and library defs share them regardless of persistence timing
+  const addonDefs=_qiCustomAddons.filter(a=>(a.label||'').trim())
+    .map(a=>({id:uid(),label:a.label.trim(),amount:parseInt(a.amount)||0,unit:(a.unit||'').trim()}));
+  const subDefs=_qiCustomSubs.filter(s=>(s.label||'').trim()||(s.price||0)>0||(s.unit||'').trim())
+    .map(s=>({id:uid(),label:(s.label||'').trim(),price:parseInt(s.price)||0,unit:(s.unit||'').trim()}));
+  // Attach the defs to an EXISTING work item in the library
+  const persistCustomDefs=(targetWid)=>{
+    const wm=targetWid?S.workItems[targetWid]:null;
+    if(!wm)return addonDefs;
+    let dirty=false;
+    if(addonDefs.length){wm.addons=[...(wm.addons||[]),...addonDefs];dirty=true;}
+    if(subDefs.length){wm.subItems=[...(wm.subItems||[]),...subDefs];dirty=true;}
+    if(dirty)saveWorkItemObj(wm);
+    return addonDefs;
+  };
+  // Insert quote lines right AFTER the parent's group (parent + its existing addons)
+  // so the merged display grouping stays intact.
+  const insertAfterGroup=(parentIdx,newLines)=>{
+    let insertAt=parentIdx+1;
+    while(insertAt<c.quotation.items.length&&c.quotation.items[insertAt].isAddon)insertAt++;
+    c.quotation.items.splice(insertAt,0,...newLines);
+  };
   if(S.editQuoteItemId){
     const idx=c.quotation.items.findIndex(x=>x.itemId===S.editQuoteItemId);
     if(idx>=0)c.quotation.items[idx]=item;
-    // Add newly-checked addons as separate quotation rows (skip ones already present)
+    const newLines=[];
+    // Add newly-checked library addons (skip ones already present)
     if(wid&&_qiSelectedAddonIds.size>0){
       const wm=S.workItems[wid];
       if(wm?.addons){
         const existingAddonIds=new Set(c.quotation.items.filter(x=>x.isAddon&&x.workItemId===wid).map(x=>x.addonId));
         wm.addons.filter(a=>_qiSelectedAddonIds.has(a.id)&&!existingAddonIds.has(a.id)).forEach(a=>{
-          c.quotation.items.push({
+          newLines.push({
             itemId:uid(),
             label:a.label,
             category:item.category,
@@ -4620,6 +4705,23 @@ function saveQuoteItem(){
         });
       }
     }
+    // Custom addons: persist defs to the linked work item (if any) + add as lines
+    persistCustomDefs(item.workItemId||wid||null);
+    addonDefs.forEach(d=>{
+      newLines.push({
+        itemId:uid(),
+        label:d.label,
+        category:item.category,
+        defaultPrice:d.amount,
+        qty:1,
+        unit:d.unit||'',
+        isAddon:true,
+        workItemId:item.workItemId||wid||null,
+        addonId:d.id,
+      });
+    });
+    if(idx>=0&&newLines.length)insertAfterGroup(idx,newLines);
+    else if(newLines.length)c.quotation.items.push(...newLines);
   }else{
     c.quotation.items=c.quotation.items||[];
     // BUNDLE: save as a single quotation row (one line, unit='Bundle', price=bundle's defaultPrice)
@@ -4654,6 +4756,22 @@ function saveQuoteItem(){
           addonAdded++;
         });
       }
+      // Custom addons on a Bundle: persist to the bundle work item + add lines
+      persistCustomDefs(wid);
+      addonDefs.forEach(d=>{
+        c.quotation.items.push({
+          itemId:uid(),
+          label:d.label,
+          category:(w.category||'').trim()||category||'未分類',
+          defaultPrice:d.amount,
+          qty:1,
+          unit:d.unit||'',
+          isAddon:true,
+          workItemId:wid,
+          addonId:d.id,
+        });
+        addonAdded++;
+      });
       toast(`已新增 Bundle：「${w.label}」${addonAdded?` · ${addonAdded} 個加減項`:''}`);
       c.quotation.updatedAt=Date.now();
       saveClientObj(c);
@@ -4661,6 +4779,7 @@ function saveQuoteItem(){
       return;
     }
     c.quotation.items.push(item);
+    const parentIdx=c.quotation.items.length-1;
     // Add selected addons as separate quotation rows (each linked to its master + addon)
     if(wid&&_qiSelectedAddonIds.size>0){
       const wm=S.workItems[wid];
@@ -4680,17 +4799,37 @@ function saveQuoteItem(){
         });
       }
     }
-    // sync to master library if checked AND not duplicate label (only for fully custom items)
+    // sync to master library if checked AND not duplicate label (only for fully custom items).
+    // Custom sub/addon defs go straight into the new work item so they're
+    // available for future picks.
+    let linkWid=wid||null;
     if(!wid&&document.getElementById('qi-sync').checked){
       const exists=workItemList().some(w=>w.label.trim().toLowerCase()===label.toLowerCase());
       if(!exists){
         const newWid=uid();
-        saveWorkItemObj({id:newWid,label,category,defaultPrice,unit,subItems:[],addons:[]});
+        saveWorkItemObj({id:newWid,label,category,defaultPrice,unit,subItems:subDefs,addons:addonDefs});
         // back-link the just-saved quote item to the new master
-        const lastIdx=c.quotation.items.length-1;
-        c.quotation.items[lastIdx].workItemId=newWid;
+        c.quotation.items[parentIdx].workItemId=newWid;
+        linkWid=newWid;
       }
+    }else if(wid){
+      // Existing library item: append custom defs to it
+      persistCustomDefs(wid);
     }
+    // Custom addons become quote lines (right after the parent + its library addons)
+    addonDefs.forEach(d=>{
+      c.quotation.items.push({
+        itemId:uid(),
+        label:d.label,
+        category,
+        defaultPrice:d.amount,
+        qty:1,
+        unit:d.unit||'',
+        isAddon:true,
+        workItemId:linkWid,
+        addonId:d.id,
+      });
+    });
   }
   c.quotation.updatedAt=Date.now();
   saveClientObj(c);
