@@ -4047,7 +4047,11 @@ function renderQuoteMain(){
   const main=document.getElementById('quote-main');
   const cid=S.selectedClientForQuote;
   const focused=document.activeElement;
-  if(main&&focused&&main.contains(focused)&&(focused.tagName==='INPUT'||focused.tagName==='TEXTAREA')){
+  // Skip re-render only while TYPING (text/number/textarea) — checkboxes and
+  // radios keep focus after click, and skipping there froze the discount
+  // inputs' disabled state (勾選優惠後金額欄無法解鎖)
+  const isTypingEl=focused&&(focused.tagName==='TEXTAREA'||(focused.tagName==='INPUT'&&focused.type!=='checkbox'&&focused.type!=='radio'));
+  if(main&&focused&&main.contains(focused)&&isTypingEl){
     renderQuotePreview();
     return;
   }
