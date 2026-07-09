@@ -587,7 +587,8 @@ select.form-select:focus{border-color:#666666}
 .qpdf-d-totals-row .val{color:#1a1a1a;font-family:'Helvetica Neue',sans-serif;font-weight:600;font-variant-numeric:tabular-nums}
 .qpdf-d-totals-row.grand{margin-top:4px;padding-top:5px;border-top:1px solid #c0a886;font-size:14px}
 .qpdf-d-totals-row.grand .lbl,.qpdf-d-totals-row.grand .val{color:#a08560;font-weight:700}
-.qpdf-d-notes{padding:4px 0 0;margin-top:4px;font-size:9.5px;color:#444;line-height:1.5}
+.qpdf-d-notes{padding:6px 0 0;margin-top:6px;font-size:9.5px;color:#444;line-height:1.5;border-top:1px solid #ece2cc}
+.qpdf-d-notes .lbl{font-weight:700;color:#a08560;font-size:10px;margin-bottom:3px;letter-spacing:.5px;display:block}
 .qpdf-d-notes .nrow{padding:1px 0}
 
 /* TERMS + PAYMENT BOTTOM GRID — side by side */
@@ -7900,7 +7901,7 @@ function buildPdfTemplateD(client){
     }).join('');
   // service notes
   const snTxt=(q.serviceNotes||'').trim();
-  const snHtml=snTxt?`<div class="qpdf-d-notes">${snTxt.split(/\r?\n/).filter(l=>l.trim()).map(l=>`<div class="nrow">${escHtml(l)}</div>`).join('')}</div>`:'';
+  const snHtml=snTxt?`<div class="qpdf-d-notes"><div class="lbl">服務說明</div>${snTxt.split(/\r?\n/).filter(l=>l.trim()).map(l=>`<div class="nrow">${escHtml(l)}</div>`).join('')}</div>`:'';
   // totals (category discounts shown inline; only project discount + tax here)
   let totalsHtml='';
   if(q.showTotals){
@@ -7971,8 +7972,8 @@ function buildPdfTemplateD(client){
         </tr></thead>
         <tbody>${tbodyHtml}</tbody>
       </table>
-      ${totalsHtml}
       ${snHtml}
+      ${totalsHtml}
       <div class="qpdf-d-bottom-pinned">
         ${termsPayHtml}
         ${sigHtml}
