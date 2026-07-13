@@ -590,6 +590,10 @@ select.form-select:focus{border-color:#666666}
 .qpdf-d-notes{padding:0;margin-top:0;font-size:9.5px;color:#444;line-height:1.5}
 .qpdf-d-notes .lbl{font-weight:700;color:#a08560;font-size:10px;margin-bottom:3px;letter-spacing:.5px;display:block}
 .qpdf-d-notes .nrow{padding:1px 0}
+/* 服務說明 + 加總區 side by side（省版面）：左邊說明吃剩餘寬度、右邊加總固定寬 */
+.qpdf-d-notes-totals{display:flex;gap:20px;align-items:flex-start;margin-top:4px}
+.qpdf-d-notes-totals .qpdf-d-notes{flex:1;min-width:0}
+.qpdf-d-notes-totals .qpdf-d-totals{margin:0 0 0 auto;padding-top:0;border-top:none;flex-shrink:0}
 
 /* TERMS + PAYMENT BOTTOM GRID — side by side */
 .qpdf-d-bottom-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:22px;margin-top:8px;padding-top:8px;border-top:1px solid #d8c8aa}
@@ -7972,8 +7976,7 @@ function buildPdfTemplateD(client){
         </tr></thead>
         <tbody>${tbodyHtml}</tbody>
       </table>
-      ${snHtml}
-      ${totalsHtml}
+      <div class="qpdf-d-notes-totals">${snHtml}${totalsHtml}</div>
       <div class="qpdf-d-bottom-pinned">
         ${termsPayHtml}
         ${sigHtml}
