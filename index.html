@@ -6123,11 +6123,14 @@ function doGenerateMonthlyInvoices(month){
 // ── INVOICE EDITOR ──
 function calcInvoiceTotal(inv){
   const subtotal=inv.items.reduce((s,i)=>s+(i.defaultPrice||0)*(i.qty==null?1:i.qty),0);
-  const taxRate=inv.taxRate||0;
+  const taxRate=inv.taxRate||0;  // 5 (客戶開立發票) 或 0，建立時自動帶入，不可手改
   const tax=Math.round(subtotal*taxRate/100);
-  const discount=Math.max(0,parseInt(inv.discount)||0);  // 優惠 — 稅後扣除
+  const manualDiscount=Math.max(0,parseInt(inv.discount)||0);
+  // 免稅優惠：發票照開 5%，但以同額列入專案優惠沖銷（客戶實付不含稅）
+  const taxOffset=inv.taxExempt?tax:0;
+  const discount=manualDiscount+taxOffset;
   const total=Math.max(0,subtotal+tax-discount);
-  return {subtotal,taxRate,tax,discount,total};
+  return {subtotal,taxRate,tax,manualDiscount,taxOffset,discount,total};
 }
 function renderInvoiceEditor(){
   const editor=document.getElementById('inv-editor');
@@ -6170,11 +6173,18 @@ function renderInvoiceEditor(){
         <input class="form-input" type="date" value="${escHtml((inv.dueDate||'').replace(/\//g,'-'))}" onchange="updateInvoiceField('dueDate',this.value.replace(/-/g,'/'))">
       </div>
       <div class="form-group">
-        <label class="form-label">稅率 (%)</label>
-        <input class="form-input" type="number" value="${inv.taxRate||0}" oninput="updateInvoiceField('taxRate',parseInt(this.value)||0)">
+        <label class="form-label">稅率（依客戶「開立發票」設定）</label>
+        <div style="display:flex;align-items:center;gap:12px;padding:7px 0;font-size:.78rem;flex-wrap:wrap">
+          <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:${(inv.taxRate||0)>0?'#1e6038':'#888'}">${inv.taxRate||0}%（固定）</span>
+          ${(inv.taxRate||0)>0?`<label style="display:flex;align-items:center;gap:5px;cursor:pointer;color:#a86a00">
+            <input type="checkbox" ${inv.taxExempt?'checked':''} onchange="updateInvoiceField('taxExempt',this.checked)" style="accent-color:#a86a00">
+            免稅優惠（稅額列入專案優惠沖銷）
+          </label>`:''}
+        </div>
+        ${inv.taxExempt&&(inv.taxRate||0)>0?`<div style="font-size:.62rem;color:#a86a00;margin-top:2px">稅額 $${fmtMoney(calcInvoiceTotal(inv).taxOffset)} 已自動列入專案優惠</div>`:''}
       </div>
       <div class="form-group">
-        <label class="form-label">專案優惠（稅後扣除）</label>
+        <label class="form-label">專案優惠（稅後扣除${inv.taxExempt?'；不含免稅沖銷額':''}）</label>
         <input class="form-input" type="number" inputmode="numeric" min="0" value="${inv.discount||0}" placeholder="0" oninput="updateInvoiceField('discount',parseInt(this.value)||0)">
       </div>
       <div class="form-group">
@@ -6295,6 +6305,7 @@ function updateInvoiceField(field,val){
     }
     needEditorRerender=true;
   }
+  if(field==='taxExempt')needEditorRerender=true;  // 顯示/隱藏沖銷提示
   recomputeInvoiceTotal(inv);
   saveInvoiceObj(inv);
   if(needEditorRerender)renderInvoiceEditor();
