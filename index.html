@@ -6176,12 +6176,13 @@ function renderInvoiceEditor(){
         <label class="form-label">稅率（依客戶「開立發票」設定）</label>
         <div style="display:flex;align-items:center;gap:12px;padding:7px 0;font-size:.78rem;flex-wrap:wrap">
           <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:${(inv.taxRate||0)>0?'#1e6038':'#888'}">${inv.taxRate||0}%（固定）</span>
-          ${(inv.taxRate||0)>0?`<label style="display:flex;align-items:center;gap:5px;cursor:pointer;color:#a86a00">
+          ${((inv.taxRate||0)>0||S.clients[inv.clientId]?.issuesReceipt)?`<label style="display:flex;align-items:center;gap:5px;cursor:pointer;color:#a86a00" title="勾選＝稅內含於收款金額（工作室吸收）：有稅率時以專案優惠沖銷；金流分潤一律先扣 5% 稅">
             <input type="checkbox" ${inv.taxExempt?'checked':''} onchange="updateInvoiceField('taxExempt',this.checked)" style="accent-color:#a86a00">
-            免稅優惠（稅額列入專案優惠沖銷）
+            免稅優惠（稅內含於收款金額）
           </label>`:''}
         </div>
-        ${inv.taxExempt&&(inv.taxRate||0)>0?`<div style="font-size:.62rem;color:#a86a00;margin-top:2px">稅額 $${fmtMoney(calcInvoiceTotal(inv).taxOffset)} 已自動列入專案優惠</div>`:''}
+        ${inv.taxExempt&&calcInvoiceTotal(inv).taxOffset>0?`<div style="font-size:.62rem;color:#a86a00;margin-top:2px">稅額 $${fmtMoney(calcInvoiceTotal(inv).taxOffset)} 已自動列入專案優惠</div>`:''}
+        ${inv.taxExempt?`<div style="font-size:.62rem;color:#c53030;margin-top:2px">金流分潤將以稅後金額（÷1.05）計算</div>`:''}
       </div>
       <div class="form-group">
         <label class="form-label">專案優惠（稅後扣除${inv.taxExempt?'；不含免稅沖銷額':''}）</label>
@@ -7189,9 +7190,10 @@ function refreshCashFilters(){
 // Compute split for a single invoice. Returns {lines, totals}
 function computeInvoiceSplit(inv){
   const items=inv.items||[];
-  // 開立發票的客戶：收款金額內含 5% 稅，分潤前先扣稅
+  // 免稅優惠的 invoice：稅由收款金額內含（工作室吸收），分潤前先扣稅
   // 稅 = sub − sub/1.05（例：12,200 → 581）
-  const taxable=!!S.clients[inv.clientId]?.issuesReceipt;
+  // 沒勾免稅優惠時，稅是額外加在總額上（客戶多付），項目金額即稅前淨收 — 不扣
+  const taxable=!!inv.taxExempt;
   // Group each non-addon parent with its consecutive isAddon items — the split
   // is computed on the group's combined amount, so discounts/加價 actually
   // flow into 分潤 (a standalone negative addon line used to clamp to net=0
@@ -7461,8 +7463,8 @@ function renderCashInvoiceRow(inv){
     const ssMark=l.shareStudio?'':'<span title="不與工作室分潤" style="color:#a86a00;font-size:.6rem;margin-left:4px">🚫🏠</span>';
     // Merged-addon hint so the user knows this amount already includes them
     const addonMark=l.addonCount?`<span style="color:#a08560;font-size:.6rem;margin-left:4px" title="金額已含加減項">· 含 ${l.addonCount} 加減項</span>`:'';
-    // 開立發票客戶：分潤前先扣掉內含的 5% 稅
-    const taxMark=l.tax?`<span style="color:#c53030;font-size:.6rem;margin-left:4px" title="開立發票客戶 — 分潤以稅後金額計算">· 稅 -$${fmtMoney(l.tax)}</span>`:'';
+    // 免稅優惠 invoice：分潤前先扣掉內含的 5% 稅
+    const taxMark=l.tax?`<span style="color:#c53030;font-size:.6rem;margin-left:4px" title="免稅優惠 — 稅內含於收款，分潤以稅後金額計算">· 稅 -$${fmtMoney(l.tax)}</span>`:'';
     // Highlight items whose overrides differ from source case (or that have no case)
     const overridden=(l.it.laborOwner||l.it.cost!=null||l.it.shareWithStudio!=null||l.it.customSplit);
     const editBg=overridden?'background:#fff8ee':'';
@@ -7512,7 +7514,7 @@ function renderCashInvoiceRow(inv){
         <div class="num" style="color:#a08560">$${fmtMoney(split.totals.studio)}</div>
         <div></div>
       </div>
-      ${split.totals.tax>0?`<div style="text-align:right;padding:4px;font-size:.64rem;color:#c53030">已扣 5% 稅金 $${fmtMoney(split.totals.tax)}（開立發票客戶 — 分潤以稅後金額計算）</div>`:''}
+      ${split.totals.tax>0?`<div style="text-align:right;padding:4px;font-size:.64rem;color:#c53030">已扣 5% 稅金 $${fmtMoney(split.totals.tax)}（免稅優惠 — 稅內含於收款，分潤以稅後金額計算）</div>`:''}
       <div class="cash-payouts">
         <div class="lbl" style="text-align:right">付款狀態 →</div>
         <div></div><div></div><div></div>
