@@ -4164,8 +4164,14 @@ function renderQuoteEditor(main,c){
         <input class="form-input" id="qm-valid" type="number" value="${c.quotation.validityDays}" oninput="updateQuoteMeta('validityDays',parseInt(this.value)||30)">
       </div>
       <div class="form-group">
-        <label class="form-label">稅率（%）</label>
-        <input class="form-input" id="qm-tax" type="number" value="${c.quotation.taxRate}" oninput="updateQuoteMeta('taxRate',parseInt(this.value)||0)">
+        <label class="form-label">稅率</label>
+        <div style="display:flex;align-items:center;gap:14px;padding:7px 0;font-size:.78rem">
+          <span style="font-family:'JetBrains Mono',monospace;color:${c.quotation.taxExempt?'#888':'#1e6038'};font-weight:700${c.quotation.taxExempt?';text-decoration:line-through':''}">5%（固定）</span>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;color:#a86a00">
+            <input type="checkbox" ${c.quotation.taxExempt?'checked':''} onchange="updateQuoteMeta('taxExempt',this.checked)" style="accent-color:#a86a00">
+            免稅優惠（隱藏 Tax 行）
+          </label>
+        </div>
       </div>
       <div class="form-group full">
         <label class="form-label">服務說明（每行一條，顯示在項目表下方）</label>
@@ -8003,7 +8009,8 @@ function calcQuotationTotal(q,items){
   });
   const projectDiscount=(q.projectDiscount?.enabled&&q.projectDiscount.amount>0)?q.projectDiscount.amount:0;
   const afterDiscounts=Math.max(0,subtotal-projectDiscount);
-  const taxRate=q.taxRate||0;
+  // 稅率固定 5%；勾選免稅優惠 → 0（Tax 行連帶隱藏）
+  const taxRate=q.taxExempt?0:5;
   const tax=Math.round(afterDiscounts*taxRate/100);
   const total=afterDiscounts+tax;
   return {subtotal,rawSubtotal,categoryBreakdown,projectDiscount,afterDiscounts,taxRate,tax,total};
