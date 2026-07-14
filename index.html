@@ -7189,6 +7189,9 @@ function refreshCashFilters(){
 // Compute split for a single invoice. Returns {lines, totals}
 function computeInvoiceSplit(inv){
   const items=inv.items||[];
+  // 開立發票的客戶：收款金額內含 5% 稅，分潤前先扣稅
+  // 稅 = sub − sub/1.05（例：12,200 → 581）
+  const taxable=!!S.clients[inv.clientId]?.issuesReceipt;
   // Group each non-addon parent with its consecutive isAddon items — the split
   // is computed on the group's combined amount, so discounts/加價 actually
   // flow into 分潤 (a standalone negative addon line used to clamp to net=0
@@ -7216,7 +7219,8 @@ function computeInvoiceSplit(inv){
     const shareStudio=(it.shareWithStudio!=null)
       ?!!it.shareWithStudio
       :(cs?(cs.shareWithStudio!==false):true);
-    const net=Math.max(0,sub-cost);
+    const lineTax=(taxable&&sub>0)?Math.round(sub-sub/1.05):0;
+    const net=Math.max(0,sub-lineTax-cost);
     let qiCut=0,wuCut=0,studioCut=0;
     // Custom split overrides everything — exact %s applied to net (rounded, with studio
     // taking the rounding remainder so the three cuts sum to net exactly)
@@ -7239,14 +7243,14 @@ function computeInvoiceSplit(inv){
       else if(labor==='巫')wuCut=net;
       else studioCut=net;
     }
-    lines.push({it,itemIdx:i,addonCount,sub,cs,cost,labor,shareStudio,net,qiCut,wuCut,studioCut});
+    lines.push({it,itemIdx:i,addonCount,sub,tax:lineTax,cs,cost,labor,shareStudio,net,qiCut,wuCut,studioCut});
     i=(j>i+1)?j:i+1;
   }
   const totals=lines.reduce((acc,l)=>{
-    acc.sub+=l.sub;acc.cost+=l.cost;acc.net+=l.net;
+    acc.sub+=l.sub;acc.tax+=l.tax;acc.cost+=l.cost;acc.net+=l.net;
     acc.qi+=l.qiCut;acc.wu+=l.wuCut;acc.studio+=l.studioCut;
     return acc;
-  },{sub:0,cost:0,net:0,qi:0,wu:0,studio:0});
+  },{sub:0,tax:0,cost:0,net:0,qi:0,wu:0,studio:0});
   return {lines,totals};
 }
 
@@ -7457,11 +7461,13 @@ function renderCashInvoiceRow(inv){
     const ssMark=l.shareStudio?'':'<span title="不與工作室分潤" style="color:#a86a00;font-size:.6rem;margin-left:4px">🚫🏠</span>';
     // Merged-addon hint so the user knows this amount already includes them
     const addonMark=l.addonCount?`<span style="color:#a08560;font-size:.6rem;margin-left:4px" title="金額已含加減項">· 含 ${l.addonCount} 加減項</span>`:'';
+    // 開立發票客戶：分潤前先扣掉內含的 5% 稅
+    const taxMark=l.tax?`<span style="color:#c53030;font-size:.6rem;margin-left:4px" title="開立發票客戶 — 分潤以稅後金額計算">· 稅 -$${fmtMoney(l.tax)}</span>`:'';
     // Highlight items whose overrides differ from source case (or that have no case)
     const overridden=(l.it.laborOwner||l.it.cost!=null||l.it.shareWithStudio!=null||l.it.customSplit);
     const editBg=overridden?'background:#fff8ee':'';
     return `<div class="cash-line">
-      <div class="lab">${escHtml(l.it.label||'')}<div class="who">${csTitle} · 負責: ${escHtml(l.labor)}${ssMark}${addonMark}</div></div>
+      <div class="lab">${escHtml(l.it.label||'')}<div class="who">${csTitle} · 負責: ${escHtml(l.labor)}${ssMark}${addonMark}${taxMark}</div></div>
       <div class="num">$${fmtMoney(l.sub)}</div>
       <div class="num cost">${l.cost?'-$'+fmtMoney(l.cost):'—'}</div>
       <div class="num">$${fmtMoney(l.net)}</div>
@@ -7506,6 +7512,7 @@ function renderCashInvoiceRow(inv){
         <div class="num" style="color:#a08560">$${fmtMoney(split.totals.studio)}</div>
         <div></div>
       </div>
+      ${split.totals.tax>0?`<div style="text-align:right;padding:4px;font-size:.64rem;color:#c53030">已扣 5% 稅金 $${fmtMoney(split.totals.tax)}（開立發票客戶 — 分潤以稅後金額計算）</div>`:''}
       <div class="cash-payouts">
         <div class="lbl" style="text-align:right">付款狀態 →</div>
         <div></div><div></div><div></div>
