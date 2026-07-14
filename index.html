@@ -6145,6 +6145,17 @@ function renderInvoiceEditor(){
   if(!inv){closeInvoiceEditor();return;}
   ensureInvoice(inv);
   const c=S.clients[inv.clientId];
+  // Draft invoices follow the client's 開立發票 setting live — invoices created
+  // before the client was flagged would otherwise be stuck at their creation-time rate
+  if(inv.status==='draft'&&c){
+    const expectedRate=c.issuesReceipt?5:0;
+    if((inv.taxRate||0)!==expectedRate){
+      inv.taxRate=expectedRate;
+      inv.updatedAt=Date.now();
+      recomputeInvoiceTotal(inv);
+      saveInvoiceObj(inv);
+    }
+  }
   const t=calcInvoiceTotal(inv);
   inv.total=t.total;
   editor.innerHTML=`
@@ -6180,6 +6191,14 @@ function renderInvoiceEditor(){
             <input type="checkbox" ${inv.taxExempt?'checked':''} onchange="updateInvoiceField('taxExempt',this.checked)" style="accent-color:#a86a00">
             免稅優惠（稅內含於收款金額）
           </label>`:''}
+          ${(()=>{
+            // Sent/paid invoices don't auto-sync — offer a manual refresh when
+            // the stored rate no longer matches the client's 開立發票 setting
+            if(inv.status==='draft'||!c)return '';
+            const expected=c.issuesReceipt?5:0;
+            if((inv.taxRate||0)===expected)return '';
+            return `<button class="nav-btn" onclick="syncInvoiceTaxFromClient()" style="font-size:.66rem;padding:3px 8px;background:#fff8ee;border-color:#f0c878;color:#a86a00" title="客戶卡設定與此張不一致">↻ 依客戶設定改為 ${expected}%</button>`;
+          })()}
         </div>
         ${inv.taxExempt&&calcInvoiceTotal(inv).taxOffset>0?`<div style="font-size:.62rem;color:#a86a00;margin-top:2px">稅額 $${fmtMoney(calcInvoiceTotal(inv).taxOffset)} 已自動列入專案優惠</div>`:''}
         ${inv.taxExempt?`<div style="font-size:.62rem;color:#c53030;margin-top:2px">金流分潤將以稅後金額（÷1.05）計算</div>`:''}
@@ -6288,6 +6307,17 @@ function renderInvoiceEditor(){
 }
 function recomputeInvoiceTotal(inv){
   inv.total=calcInvoiceTotal(inv).total;
+}
+function syncInvoiceTaxFromClient(){
+  const inv=S.invoices[S.selectedInvoiceId];if(!inv)return;
+  const c=S.clients[inv.clientId];if(!c){toast('客戶不存在',true);return;}
+  const expected=c.issuesReceipt?5:0;
+  inv.taxRate=expected;
+  inv.updatedAt=Date.now();
+  recomputeInvoiceTotal(inv);
+  saveInvoiceObj(inv);
+  renderInvoiceEditor();renderInvoicePreview();
+  toast(`稅率已更新為 ${expected}%`);
 }
 function updateInvoiceField(field,val){
   const inv=S.invoices[S.selectedInvoiceId];if(!inv)return;
