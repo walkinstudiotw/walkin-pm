@@ -191,6 +191,16 @@ body{display:flex;flex-direction:column}
 .cash-month-pill.studio{background:#faf6ee;border-color:#c8b088}
 .cash-month-pill.studio .v{color:#a08560}
 .cash-month-unpaid{font-size:.68rem;color:#a86a00;font-weight:600}
+/* forecast tab */
+.fc-rows{background:#ffffff;border:1px solid #e8e8e8;border-radius:8px;overflow:hidden}
+.fc-line{display:grid;grid-template-columns:1fr auto 110px;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid #f0f0f0;cursor:pointer;font-size:.74rem;transition:background .12s}
+.fc-line:last-child{border-bottom:none}
+.fc-line:hover{background:#f8f8f8}
+.fc-lab{color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fc-lab.est{color:#888;font-style:italic}
+.fc-date{font-family:'JetBrains Mono',monospace;font-size:.62rem;color:#999;margin-left:8px}
+.fc-tier{font-size:.6rem;font-weight:700;padding:1px 7px;border:1px solid;border-radius:9px;white-space:nowrap}
+.fc-amt{font-family:'JetBrains Mono',monospace;font-weight:700;text-align:right}
 .cash-row{background:#ffffff;border:1px solid #d8d8d8;border-radius:8px;overflow:hidden;transition:border-color .12s}
 .cash-row:hover{border-color:#7de89a}
 .cash-row-head{display:grid;grid-template-columns:90px 1fr 80px 100px 90px 30px;gap:10px;align-items:center;padding:10px 14px;cursor:pointer;font-size:.78rem}
@@ -733,6 +743,7 @@ select.form-select:focus{border-color:#666666}
         <div class="sb-group-title">收款開票</div>
         <div class="sb-item" data-tab="invoices"><span class="ico">🧾</span>Invoice</div>
         <div class="sb-item" data-tab="cashflow"><span class="ico">💵</span>金流</div>
+        <div class="sb-item" data-tab="forecast"><span class="ico">📈</span>預估</div>
       </div>
     </div>
     <div class="sb-bottom">
@@ -956,6 +967,19 @@ select.form-select:focus{border-color:#666666}
     </div>
     <!-- 外包應付款 -->
     <div id="cash-outsource-section"></div>
+  </div>
+</div>
+
+<!-- TAB: FORECAST -->
+<div class="tab-panel" id="tab-forecast">
+  <div class="scroll-body">
+    <div class="cash-summary" id="fc-summary"></div>
+    <div class="cash-list" id="fc-list"></div>
+    <div id="fc-empty" class="empty-state" style="display:none">
+      <div class="empty-icon">📈</div>
+      <div class="empty-title">沒有可預估的項目</div>
+      <div style="font-size:.8rem">新增案件或寄出 Invoice 後，這裡會依交期／付款期限做未來收支預估</div>
+    </div>
   </div>
 </div>
 
@@ -2163,6 +2187,7 @@ const TAB_META={
   quotations:{ico:'💰',label:'報價單',addBtn:null},
   invoices:{ico:'🧾',label:'Invoice',addBtn:null},
   cashflow:{ico:'💵',label:'金流',addBtn:null},
+  forecast:{ico:'📈',label:'預估',addBtn:null},
 };
 // ── MOBILE SIDEBAR DRAWER ──
 function toggleMobileSidebar(){document.body.classList.toggle('sb-open');}
@@ -2212,6 +2237,7 @@ function renderCurrentTab(){
   else if(n==='quotations')renderQuotations();
   else if(n==='invoices')renderInvoices();
   else if(n==='cashflow')renderCashflow();
+  else if(n==='forecast')renderForecast();
   else if(n==='outsourcers')renderOutsourcers();
 }
 document.querySelectorAll('.sb-item[data-tab]').forEach(t=>t.addEventListener('click',()=>switchTab(t.dataset.tab)));
@@ -7818,6 +7844,158 @@ function setInvoicePaymentStatus(id,status){
   inv.updatedAt=Date.now();
   saveInvoiceObj(inv);
   toast(`已標記為「${status==='paid'?'已收款':'待收款'}」`);
+}
+
+// ═══════════════════════════════════════════════════
+// ── FORECAST MODULE（未來收支預估）─────────────────
+// ═══════════════════════════════════════════════════
+// 全部從既有資料推算，零新欄位：
+//   收入 A=已請款待收(sent, 依付款期限)  B=已完成未請款(依交期)  C=進行中(依交期)
+//   支出 O=外包待付(依交期)  L=勞務未付(已確定, 當月)  LE=勞務估算(未請款案件, 依交期)
+const FC_TIERS={
+  A:{name:'待收(已請款)',color:'#1e6038',sign:1},
+  B:{name:'已完成未請款',color:'#1e4a80',sign:1},
+  C:{name:'進行中',color:'#888',sign:1},
+  O:{name:'外包',color:'#c53030',sign:-1},
+  L:{name:'勞務未付',color:'#a86a00',sign:-1},
+  LE:{name:'勞務(估)',color:'#a86a00',sign:-1},
+};
+function computeForecast(){
+  const now=new Date();
+  const monthKeys=[];
+  for(let k=0;k<4;k++){
+    const d=new Date(now.getFullYear(),now.getMonth()+k,1);
+    monthKeys.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+  }
+  const KEY_LATER='later',KEY_NODATE='nodate';
+  const buckets=new Map();
+  [...monthKeys,KEY_LATER,KEY_NODATE].forEach(k=>buckets.set(k,{inflows:[],outflows:[]}));
+  // 過去日期（逾期）歸入當月 — 錢還沒進來/付出去，是「現在」的事
+  const keyFor=(ym)=>{
+    if(!ym)return KEY_NODATE;
+    if(buckets.has(ym))return ym;
+    return ym<monthKeys[0]?monthKeys[0]:KEY_LATER;
+  };
+  // A: sent invoices → 付款期限月份
+  invoiceList().filter(i=>i.status==='sent').forEach(inv=>{
+    const ym=(inv.dueDate||'').replace(/\//g,'-').slice(0,7);
+    const c=S.clients[inv.clientId];
+    buckets.get(keyFor(ym)).inflows.push({tier:'A',label:`${inv.invoiceNumber||''}｜${c?.name||'?'}`,date:inv.dueDate||'',amt:inv.total||0,click:`jumpToInvoice('${inv.id}')`});
+  });
+  // B/C 收入 + LE 勞務估算：未請款的主案件
+  Object.values(S.cases||{}).forEach(cs=>{
+    if(!cs||cs.linkedToCaseId)return;
+    if(resolveCaseInvoice(cs))return;  // 已真實掛在 invoice 上 → 由 A/L 處理
+    const amt=cs.pricing?.amount||0;
+    const ym=(cs.dueDate||'').slice(0,7);
+    const cName=S.clients[cs.clientId]?.name||'?';
+    const st=cs.status||'todo';
+    if(amt>0){
+      const tier=st==='done'?'B':'C';
+      buckets.get(keyFor(ym)).inflows.push({tier,label:`${cs.title||''}｜${cName}`,date:cs.dueDate||'',amt,click:`openEditCase('${cs.id}')`});
+    }
+    // 勞務估算：net = 金額 − 外包成本；分潤 70% / 不分潤 100%（粗估，不含稅內含與覆寫）
+    const cost=cs.isOutsourced?computeOutsourceCost(cs):(cs.cost||0);
+    const net=Math.max(0,amt-cost);
+    const owner=cs.laborOwner||'齊';
+    if(net>0&&(owner==='齊'||owner==='巫')){
+      const cut=(cs.shareWithStudio!==false)?Math.round(net*0.7):net;
+      if(cut>0)buckets.get(keyFor(ym)).outflows.push({tier:'LE',label:`${owner} 勞務（估）｜${cs.title||''}`,date:cs.dueDate||'',amt:cut,click:`openEditCase('${cs.id}')`});
+    }
+  });
+  // L: 已確定的勞務未付（sent/paid invoices 的未勾付款）→ 當月（已到期義務）
+  invoiceList().filter(i=>i.status==='sent'||i.status==='paid').forEach(inv=>{
+    const split=computeInvoiceSplit(inv);
+    [['qi','齊',split.totals.qi],['wu','巫',split.totals.wu]].forEach(([k,name,amtK])=>{
+      if(amtK>0&&!inv.payouts?.[k]?.paid){
+        buckets.get(monthKeys[0]).outflows.push({tier:'L',label:`${name} 勞務未付｜${inv.invoiceNumber||''}`,date:'',amt:amtK,click:`jumpToInvoice('${inv.id}')`});
+      }
+    });
+  });
+  // O: 外包待付（含未完成案件的未來外包費）→ 交期月份
+  Object.values(S.cases||{}).forEach(cs=>{
+    if(!cs?.isOutsourced||!cs.outsource?.outsourcerId||cs.outsource?.paidAt)return;
+    const cost=computeOutsourceCost(cs);
+    if(cost<=0)return;
+    const o=S.outsourcers[cs.outsource.outsourcerId];
+    const ym=(cs.dueDate||'').slice(0,7);
+    buckets.get(keyFor(ym)).outflows.push({tier:'O',label:`外包 ${o?.name||'?'}｜${cs.title||''}`,date:cs.dueDate||'',amt:cost,click:`openEditCase('${cs.id}')`});
+  });
+  // 彙整
+  const tierOrder={A:0,B:1,C:2,O:0,L:1,LE:2};
+  const months=[...buckets.entries()].map(([key,b])=>{
+    const srt=(arr)=>arr.sort((x,y)=>(tierOrder[x.tier]-tierOrder[y.tier])||(x.date||'').localeCompare(y.date||''));
+    const inSum=b.inflows.reduce((s,x)=>s+x.amt,0);
+    const outSum=b.outflows.reduce((s,x)=>s+x.amt,0);
+    return {key,inflows:srt(b.inflows),outflows:srt(b.outflows),inSum,outSum,net:inSum-outSum};
+  });
+  const shown=months.filter(m=>monthKeys.includes(m.key));
+  const summary={
+    inflow:shown.reduce((s,m)=>s+m.inSum,0),
+    outflow:shown.reduce((s,m)=>s+m.outSum,0),
+    tierSums:{},
+  };
+  summary.net=summary.inflow-summary.outflow;
+  Object.keys(FC_TIERS).forEach(t=>{
+    summary.tierSums[t]=shown.reduce((s,m)=>s+[...m.inflows,...m.outflows].filter(x=>x.tier===t).reduce((a,x)=>a+x.amt,0),0);
+  });
+  return {monthKeys,months,summary};
+}
+function renderForecast(){
+  const list=document.getElementById('fc-list');
+  const summaryEl=document.getElementById('fc-summary');
+  const empty=document.getElementById('fc-empty');
+  if(!list)return;
+  const fc=computeForecast();
+  const hasAny=fc.months.some(m=>m.inflows.length||m.outflows.length);
+  if(!hasAny){summaryEl.innerHTML='';list.innerHTML='';empty.style.display='flex';return;}
+  empty.style.display='none';
+  const ts=fc.summary.tierSums;
+  summaryEl.innerHTML=`
+    <div class="cash-card recv">
+      <div class="lbl">📥 近 4 個月預估流入</div>
+      <div class="val green">$${fmtMoney(fc.summary.inflow)}</div>
+      <div class="sub">待收 $${fmtMoney(ts.A)} · 未請款 $${fmtMoney(ts.B)} · 進行中 $${fmtMoney(ts.C)}</div>
+    </div>
+    <div class="cash-card" style="border-color:#e8aaaa;background:#fde8e8">
+      <div class="lbl" style="color:#c53030">📤 近 4 個月預估流出</div>
+      <div class="val" style="color:#c53030">$${fmtMoney(fc.summary.outflow)}</div>
+      <div class="sub">外包 $${fmtMoney(ts.O)} · 勞務 $${fmtMoney(ts.L+ts.LE)}</div>
+    </div>
+    <div class="cash-card ${fc.summary.net>=0?'recv':''}" style="${fc.summary.net<0?'border-color:#e8aaaa;background:#fde8e8':''}">
+      <div class="lbl">💵 預估淨流入</div>
+      <div class="val ${fc.summary.net>=0?'green':''}" style="${fc.summary.net<0?'color:#c53030':''}">${fc.summary.net<0?'-':''}$${fmtMoney(Math.abs(fc.summary.net))}</div>
+      <div class="sub">進行中案件視為可能收入（灰字級別）</div>
+    </div>`;
+  const KEY_LABEL={later:'更遠（4 個月後）',nodate:'未設日期'};
+  list.innerHTML=fc.months.filter(m=>fc.monthKeys.includes(m.key)||m.inflows.length||m.outflows.length).map(m=>{
+    const pretty=KEY_LABEL[m.key]||m.key.replace('-',' / ');
+    const pill=(t,amt)=>amt>0?`<div class="cash-month-pill" style="background:#fff;border-color:${FC_TIERS[t].color}44"><div class="k" style="color:${FC_TIERS[t].color}">${FC_TIERS[t].name}</div><div class="v" style="color:${FC_TIERS[t].color}">$${fmtMoney(amt)}</div></div>`:'';
+    const sumBy=(arr,t)=>arr.filter(x=>x.tier===t).reduce((s,x)=>s+x.amt,0);
+    const rows=[...m.inflows,...m.outflows].map(x=>{
+      const T=FC_TIERS[x.tier];
+      const isOut=T.sign<0;
+      const est=x.tier==='C'||x.tier==='LE';
+      return `<div class="fc-line" onclick="${x.click}" title="${est?'估算值 — 依案件設定粗估':''}">
+        <div class="fc-lab${est?' est':''}">${escHtml(x.label)}${x.date?`<span class="fc-date">${escHtml(x.date)}</span>`:''}</div>
+        <span class="fc-tier" style="color:${T.color};border-color:${T.color}55">${T.name}</span>
+        <div class="fc-amt" style="color:${isOut?'#c53030':'#1e6038'}">${isOut?'-':'+'}$${fmtMoney(x.amt)}</div>
+      </div>`;
+    }).join('');
+    return `<section class="cash-month">
+      <div class="cash-month-header">
+        <div class="cmh-top">
+          <div class="cmh-title">📅 ${escHtml(pretty)}</div>
+          <div class="cmh-meta">預估淨流入 <b style="color:${m.net>=0?'#1e6038':'#c53030'}">${m.net<0?'-':'+'}$${fmtMoney(Math.abs(m.net))}</b></div>
+        </div>
+        <div class="cmh-pills">
+          ${pill('A',sumBy(m.inflows,'A'))}${pill('B',sumBy(m.inflows,'B'))}${pill('C',sumBy(m.inflows,'C'))}
+          ${pill('O',sumBy(m.outflows,'O'))}${pill('L',sumBy(m.outflows,'L'))}${pill('LE',sumBy(m.outflows,'LE'))}
+        </div>
+      </div>
+      <div class="fc-rows">${rows||'<div style="padding:10px;text-align:center;color:#999;font-size:.7rem">此月份無預估項目</div>'}</div>
+    </section>`;
+  }).join('');
 }
 
 // ═══════════════════════════════════════════════════
