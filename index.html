@@ -6192,7 +6192,9 @@ function renderInvoiceEditor(){
   editor.innerHTML=`
     <button class="inv-back-btn" onclick="closeInvoiceEditor()">← 返回列表</button>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-      <div style="font-size:.95rem;font-weight:700;color:#1a1a1a;font-family:'JetBrains Mono',monospace">🧾 ${escHtml(inv.invoiceNumber||'')}</div>
+      <div style="display:flex;align-items:center;gap:4px;font-size:.95rem;font-weight:700;color:#1a1a1a;font-family:'JetBrains Mono',monospace">🧾
+        <input value="${escHtml(inv.invoiceNumber||'')}" onchange="updateInvoiceNumber(this.value)" title="點擊可直接修改編號" style="font-family:'JetBrains Mono',monospace;font-size:.95rem;font-weight:700;color:#1a1a1a;background:transparent;border:1px solid transparent;border-radius:5px;padding:2px 6px;width:170px;outline:none;transition:all .12s" onfocus="this.style.background='#fff';this.style.borderColor='#7de89a'" onblur="this.style.background='transparent';this.style.borderColor='transparent'">
+      </div>
       <span class="inv-status ${inv.status}">${({draft:'草稿',sent:'已寄出',paid:'已收款'})[inv.status]||''}</span>
       <span class="spacer"></span>
       <button class="nav-btn del" onclick="confirmDelInvoice('${inv.id}')" style="background:#fde8e8;border-color:#e8aaaa;color:#c53030">🗑️ 刪除</button>
@@ -6338,6 +6340,18 @@ function renderInvoiceEditor(){
 }
 function recomputeInvoiceTotal(inv){
   inv.total=calcInvoiceTotal(inv).total;
+}
+function updateInvoiceNumber(val){
+  const inv=S.invoices[S.selectedInvoiceId];if(!inv)return;
+  const n=(val||'').trim();
+  if(!n){toast('編號不可為空',true);renderInvoiceEditor();return;}
+  const dup=invoiceList().some(x=>x.id!==inv.id&&x.invoiceNumber===n);
+  inv.invoiceNumber=n;
+  inv.updatedAt=Date.now();
+  saveInvoiceObj(inv);
+  renderInvoicePreview();
+  if(dup)toast(`⚠️ 編號「${n}」與其他 Invoice 重複，已儲存但建議修改`,true);
+  else toast(`編號已改為 ${n}`);
 }
 function syncInvoiceTaxFromClient(){
   const inv=S.invoices[S.selectedInvoiceId];if(!inv)return;
