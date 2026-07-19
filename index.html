@@ -2124,11 +2124,13 @@ function nextInvoiceNumber(prefix,billingMonth){
   const base=`${(prefix||'INV').toUpperCase()}-${billingMonth.replace('-','')}`;
   const existing=invoiceList().filter(inv=>inv.invoiceNumber&&inv.invoiceNumber.startsWith(base));
   if(existing.length===0)return base;
-  // find highest -N suffix
+  // find highest -N suffix AFTER the base (the old regex matched the month
+  // part of the base itself, producing numbers like S-202605-202606)
   let maxSerial=1;
   existing.forEach(inv=>{
-    if(inv.invoiceNumber===base){maxSerial=Math.max(maxSerial,1);}
-    const m=inv.invoiceNumber.match(/-(\d+)$/);
+    const n=inv.invoiceNumber;
+    if(n===base){maxSerial=Math.max(maxSerial,1);return;}
+    const m=n.slice(base.length).match(/^-(\d+)$/);
     if(m)maxSerial=Math.max(maxSerial,parseInt(m[1])||0);
   });
   return `${base}-${maxSerial+1}`;
@@ -5742,7 +5744,10 @@ function renderInvoices(){
         </div>
         <div class="right-block">
           <div class="amt">$${fmtMoney(inv.total||0)}</div>
-          <div class="inv-status ${inv.status||'draft'}">${statusLabel}</div>
+          <div style="display:flex;align-items:center;gap:4px">
+            <div class="inv-status ${inv.status||'draft'}">${statusLabel}</div>
+            <button class="act-btn" onclick="event.stopPropagation();copyInvoice('${inv.id}')" title="複製此 Invoice 為新草稿" style="padding:2px 5px">📄</button>
+          </div>
         </div>
       </div>`;
     };
@@ -6890,6 +6895,32 @@ function unlinkCaseFromInvoice(caseId,invId){
       child.invoiceId=null;child.updatedAt=Date.now();saveCaseObj(child);
     }
   });
+}
+// Duplicate an invoice as a fresh draft. Cases stay linked to the ORIGINAL
+// (no cascade-marking here), so the copy is safe for re-issues / templates.
+function copyInvoice(id){
+  const src=S.invoices[id];if(!src)return;
+  const c=S.clients[src.clientId];
+  const prefix=c?.invoicePrefix||(c?.name?c.name.charAt(0):'INV');
+  const inv=JSON.parse(JSON.stringify(src));
+  const issuedAt=Date.now();
+  const due=new Date();due.setDate(due.getDate()+30);
+  inv.id=uid();
+  inv.invoiceNumber=nextInvoiceNumber(prefix,src.billingMonth||'');
+  inv.status='draft';
+  inv.issuedAt=issuedAt;
+  inv.issuedDate=`${new Date(issuedAt).getFullYear()}/${String(new Date(issuedAt).getMonth()+1).padStart(2,'0')}/${String(new Date(issuedAt).getDate()).padStart(2,'0')}`;
+  inv.dueDate=`${due.getFullYear()}/${String(due.getMonth()+1).padStart(2,'0')}/${String(due.getDate()).padStart(2,'0')}`;
+  delete inv.sentAt;delete inv.sentTo;delete inv.paidAt;delete inv.paidDate;delete inv.payouts;
+  (inv.items||[]).forEach(it=>{it.itemId=uid();});
+  inv.createdAt=Date.now();
+  inv.updatedAt=Date.now();
+  // Optimistic local insert — saveInvoiceObj only writes Firebase; the listener
+  // echo lags, and openInvoiceEditor below needs the invoice in S right now
+  S.invoices[inv.id]=inv;
+  saveInvoiceObj(inv);
+  toast(`已複製為 ${inv.invoiceNumber}（草稿）`);
+  openInvoiceEditor(inv.id);
 }
 function confirmDelInvoice(id){
   const inv=S.invoices[id];if(!inv)return;
