@@ -7418,13 +7418,24 @@ function computeInvoiceSplit(inv){
 }
 
 // ── 專案支出 CRUD（存於 inv.expenses，先扣後分）──
+// 防誤觸：列表預設唯讀，點 ✎ 進入編輯（一次一列），✓ 完成後回唯讀
 function addInvExpense(invId){
   const inv=S.invoices[invId];if(!inv)return;
   inv.expenses=inv.expenses||[];
-  inv.expenses.push({id:uid(),category:'器材租借',label:'',amount:0});
+  const e={id:uid(),category:'器材租借',label:'',amount:0};
+  inv.expenses.push(e);
   inv.updatedAt=Date.now();
   saveInvoiceObj(inv);
+  S.cashFilter.editingExpenseId=e.id;  // 新增的列直接進入編輯模式
   renderCashflow();
+}
+function editInvExpense(expId){
+  S.cashFilter.editingExpenseId=expId;
+  renderCashflow();
+}
+function doneInvExpense(){
+  S.cashFilter.editingExpenseId=null;
+  renderCashflow();  // 回唯讀並刷新合計
 }
 function updateInvExpense(invId,expId,field,val){
   const inv=S.invoices[invId];if(!inv)return;
@@ -7432,13 +7443,14 @@ function updateInvExpense(invId,expId,field,val){
   e[field]=val;
   inv.updatedAt=Date.now();
   saveInvoiceObj(inv);
-  renderCashflow();
+  // 編輯中不整頁重繪（跨欄位輸入不跳焦）；合計在按 ✓ 完成時刷新
 }
 function delInvExpense(invId,expId){
   const inv=S.invoices[invId];if(!inv)return;
   inv.expenses=(inv.expenses||[]).filter(x=>x.id!==expId);
   inv.updatedAt=Date.now();
   saveInvoiceObj(inv);
+  if(S.cashFilter.editingExpenseId===expId)S.cashFilter.editingExpenseId=null;
   renderCashflow();
 }
 // ── PER-LINE OVERRIDE (cashflow) — 負責 / 外包成本 / 分潤 ──
@@ -7696,14 +7708,30 @@ function renderCashInvoiceRow(inv){
           <span style="font-size:.64rem;font-weight:700;color:#a08560;letter-spacing:.4px">📦 專案支出（先扣後分 — 按分潤比例自三方扣除）</span>
           <button class="nav-btn" onclick="addInvExpense('${inv.id}')" style="font-size:.64rem;padding:2px 8px">＋ 支出</button>
         </div>
-        ${(inv.expenses||[]).map(e=>`<div style="display:grid;grid-template-columns:120px 1fr 110px 26px;gap:6px;align-items:center;margin-bottom:4px">
-          <select onchange="updateInvExpense('${inv.id}','${e.id}','category',this.value)" style="font-size:.68rem;padding:3px 6px;border:1px solid #d8d8d8;border-radius:4px;background:#fff;font-family:inherit">
-            ${['器材租借','場地租借','其他'].map(cat=>`<option value="${cat}" ${e.category===cat?'selected':''}>${cat}</option>`).join('')}
-          </select>
-          <input type="text" value="${escHtml(e.label||'')}" placeholder="說明（例：三創12F 一日）" onchange="updateInvExpense('${inv.id}','${e.id}','label',this.value)" style="font-size:.68rem;padding:3px 6px;border:1px solid #d8d8d8;border-radius:4px;background:#fff;font-family:inherit">
-          <input type="number" value="${e.amount||0}" onchange="updateInvExpense('${inv.id}','${e.id}','amount',parseInt(this.value)||0)" style="font-size:.68rem;padding:3px 6px;border:1px solid #d8d8d8;border-radius:4px;background:#fff;font-family:'JetBrains Mono',monospace;text-align:right">
-          <button class="act-btn del" onclick="delInvExpense('${inv.id}','${e.id}')" title="刪除" style="padding:2px 4px">✕</button>
-        </div>`).join('')}
+        ${(inv.expenses||[]).map(e=>{
+          const editing=S.cashFilter.editingExpenseId===e.id;
+          if(!editing){
+            // 顯示模式 — 唯讀，點 ✎ 才進入編輯（防誤觸）
+            return `<div style="display:grid;grid-template-columns:120px 1fr 110px 26px;gap:6px;align-items:center;margin-bottom:4px;font-size:.7rem">
+              <span style="color:#a08560;background:#fff;border:1px solid #e0d4b8;border-radius:4px;padding:3px 6px;text-align:center">${escHtml(e.category||'其他')}</span>
+              <span style="color:#1a1a1a;padding:3px 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(e.label||'（未命名）')}</span>
+              <span style="font-family:'JetBrains Mono',monospace;color:#c53030;text-align:right;padding:3px 2px">-$${fmtMoney(e.amount||0)}</span>
+              <button class="act-btn" onclick="editInvExpense('${e.id}')" title="編輯此筆支出" style="padding:2px 4px">✎</button>
+            </div>`;
+          }
+          // 編輯模式 — 完整輸入欄 + 完成/刪除
+          return `<div style="display:grid;grid-template-columns:120px 1fr 110px 52px;gap:6px;align-items:center;margin-bottom:4px;background:#fff;border:1px solid #7de89a;border-radius:6px;padding:4px">
+            <select onchange="updateInvExpense('${inv.id}','${e.id}','category',this.value)" style="font-size:.68rem;padding:3px 6px;border:1px solid #d8d8d8;border-radius:4px;background:#fff;font-family:inherit">
+              ${['器材租借','場地租借','其他'].map(cat=>`<option value="${cat}" ${e.category===cat?'selected':''}>${cat}</option>`).join('')}
+            </select>
+            <input type="text" value="${escHtml(e.label||'')}" placeholder="說明（例：三創12F 一日）" onchange="updateInvExpense('${inv.id}','${e.id}','label',this.value)" style="font-size:.68rem;padding:3px 6px;border:1px solid #d8d8d8;border-radius:4px;background:#fff;font-family:inherit">
+            <input type="number" value="${e.amount||0}" onchange="updateInvExpense('${inv.id}','${e.id}','amount',parseInt(this.value)||0)" style="font-size:.68rem;padding:3px 6px;border:1px solid #d8d8d8;border-radius:4px;background:#fff;font-family:'JetBrains Mono',monospace;text-align:right">
+            <div style="display:flex;gap:2px">
+              <button class="act-btn" onclick="doneInvExpense()" title="完成編輯" style="padding:2px 4px;color:#1e6038">✓</button>
+              <button class="act-btn del" onclick="delInvExpense('${inv.id}','${e.id}')" title="刪除" style="padding:2px 4px">✕</button>
+            </div>
+          </div>`;
+        }).join('')}
       </div>
       <div class="cash-totals">
         <div>合計</div>
