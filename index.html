@@ -1221,6 +1221,12 @@ select.form-select:focus{border-color:#666666}
         </div>
         <div style="font-size:.62rem;color:#666;margin-top:3px;line-height:1.5">此案件不會出現在 Invoice 候選清單；當主案件被請款時，此案件會自動標記為已請款。</div>
       </div>
+      <div style="margin-top:8px;padding-top:8px;border-top:1px dashed #e0e0e0">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.74rem;color:#666">
+          <input type="checkbox" id="f-billed-external" style="accent-color:#888">
+          <span>🗂 已在系統外請款（歷史案件 — 不列入預估、未請款篩選與月底結算）</span>
+        </label>
+      </div>
     </div>
 
     <div class="form-row-3">
@@ -2371,6 +2377,7 @@ function filteredCases(){
     // 附屬案件會跟主案件請款，不列入
     arr=arr.filter(c=>{
       if(c.linkedToCaseId)return false;
+      if(c.billedExternally)return false;  // 系統外已請款的歷史案件
       const inv=resolveCaseInvoice(c);
       return !inv||inv.status==='draft';
     });
@@ -2466,6 +2473,10 @@ function renderCases(){
       </td>
       <td style="text-align:center" onclick="event.stopPropagation()">
         ${(()=>{
+          // 系統外已請款的歷史案件 → 灰色標記（點列可進編輯取消勾選）
+          if(c.billedExternally){
+            return `<span class="invoiced-badge" style="background:#f0f0f0;color:#888;border-color:#d8d8d8" title="本系統建立前已請款的歷史案件 — 不列入預估／未請款／月結">🗂 外部已請款</span>`;
+          }
           // Resolve so stale invoiceIds (invoice deleted or its items emptied)
           // don't keep showing a false 已請款 badge in the list
           const res=resolveCaseInvoice(c);
@@ -2640,6 +2651,7 @@ function openAddCase(){
   document.getElementById('f-billing-independent').checked=true;
   document.getElementById('f-billing-linked').checked=false;
   document.getElementById('f-linked-to').value='';
+  document.getElementById('f-billed-external').checked=false;
   refreshLinkedToOptions();
   onBillingModeChange();
   openM('case-modal');
@@ -2707,6 +2719,7 @@ function openEditCase(id){
   document.getElementById('f-share-studio').checked=c.shareWithStudio!==false;
   // billing-link state
   const isLinked=!!c.linkedToCaseId;
+  document.getElementById('f-billed-external').checked=!!c.billedExternally;
   document.getElementById('f-billing-independent').checked=!isLinked;
   document.getElementById('f-billing-linked').checked=isLinked;
   document.getElementById('f-linked-to').value=isLinked?c.linkedToCaseId:'';
@@ -3221,6 +3234,7 @@ function saveCase(){
     }:null,
     shareWithStudio:document.getElementById('f-share-studio').checked,
     pricing:{quotationItemId,amount:billingLinked?0:amount,addons:billingLinked?[]:_fAddons.filter(a=>a.qty>0).map(a=>({addonId:a.addonId,label:a.label,amount:a.amount,qty:a.qty}))},
+    billedExternally:document.getElementById('f-billed-external').checked,
     linkedToCaseId,
     invoiceId:existingInvoiceId,
     createdAt:S.editCaseId?S.cases[S.editCaseId]?.createdAt:Date.now(),
@@ -5819,6 +5833,7 @@ function refreshInvoiceCasePicker(){
     cs.clientId===cid &&
     cs.status==='done' &&
     !cs.invoiceId &&
+    !cs.billedExternally &&
     !cs.linkedToCaseId
   ).sort((a,b)=>(a.dueDate||'').localeCompare(b.dueDate||''));
   if(!cases.length){
@@ -6089,6 +6104,7 @@ function doGenerateMonthlyInvoices(month){
   const groups=new Map();
   Object.values(S.cases).forEach(cs=>{
     if(cs.status!=='done')return;
+    if(cs.billedExternally)return; // 系統外已請款的歷史案件
     if(!cs.dueDate||!cs.dueDate.startsWith(month))return;
     if(cs.invoiceId)return; // already invoiced
     if(cs.linkedToCaseId)return; // attached case — invoiced via parent
@@ -6424,6 +6440,7 @@ function getIacEligibleCases(){
     cs && cs.clientId===inv.clientId
     && cs.status==='done'
     && !cs.invoiceId
+    && !cs.billedExternally
     && !cs.linkedToCaseId
   ).sort((a,b)=>(a.dueDate||'').localeCompare(b.dueDate||''));
 }
@@ -8023,6 +8040,7 @@ function computeForecast(){
   // B/C 收入 + LE 勞務估算：未請款的主案件
   Object.values(S.cases||{}).forEach(cs=>{
     if(!cs||cs.linkedToCaseId)return;
+    if(cs.billedExternally)return;  // 系統外已請款的歷史案件 — 不列入預估
     if(resolveCaseInvoice(cs))return;  // 已真實掛在 invoice 上 → 由 A/L 處理
     const amt=cs.pricing?.amount||0;
     const ym=(cs.dueDate||'').slice(0,7);
@@ -8030,7 +8048,7 @@ function computeForecast(){
     const st=cs.status||'todo';
     if(amt>0){
       const tier=st==='done'?'B':'C';
-      buckets.get(keyFor(ym)).inflows.push({tier,label:`${cs.title||''}｜${cName}`,date:cs.dueDate||'',amt,click:`openEditCase('${cs.id}')`});
+      buckets.get(keyFor(ym)).inflows.push({tier,caseId:cs.id,label:`${cs.title||''}｜${cName}`,date:cs.dueDate||'',amt,click:`openEditCase('${cs.id}')`});
     }
     // 勞務估算（粗估，不含稅內含與覆寫）：
     //   外包歸屬 project（舊制）→ net = 金額 − 外包成本，再分 70/100%
@@ -8096,6 +8114,17 @@ function computeForecast(){
   summary.studioIncome=summary.studioConfirmed+summary.studioEstimated;
   return {monthKeys,months,summary};
 }
+// 快速標記歷史案件為「系統外已請款」（從預估頁直接點）
+function markCaseBilledExternally(id){
+  const cs=S.cases[id];if(!cs)return;
+  showConf('標記為系統外已請款？',`「${cs.title||''}」是在本系統建立前就已請款的歷史案件？標記後不再出現在預估、未請款篩選與月底結算（案件本身保留，可隨時在案件編輯中取消勾選）。`,()=>{
+    cs.billedExternally=true;
+    cs.updatedAt=Date.now();
+    saveCaseObj(cs);
+    renderForecast();
+    toast('已標記 — 不再列入預估');
+  });
+}
 function renderForecast(){
   const list=document.getElementById('fc-list');
   const summaryEl=document.getElementById('fc-summary');
@@ -8131,10 +8160,14 @@ function renderForecast(){
       const T=FC_TIERS[x.tier];
       const isOut=T.sign<0;
       const est=x.tier==='C'||x.tier==='LE';
+      // 案件類的收入行：可一鍵標記「系統外已請款」（歷史案件清理用）
+      const extBtn=(x.caseId&&(x.tier==='B'||x.tier==='C'))
+        ?`<button class="act-btn" onclick="event.stopPropagation();markCaseBilledExternally('${x.caseId}')" title="標記為系統外已請款 — 從預估／未請款／月結中移除（案件保留）" style="padding:1px 5px;font-size:.62rem;color:#888">🗂</button>`
+        :'';
       return `<div class="fc-line" onclick="${x.click}" title="${est?'估算值 — 依案件設定粗估':''}">
         <div class="fc-lab${est?' est':''}">${escHtml(x.label)}${x.date?`<span class="fc-date">${escHtml(x.date)}</span>`:''}</div>
         <span class="fc-tier" style="color:${T.color};border-color:${T.color}55">${T.name}</span>
-        <div class="fc-amt" style="color:${isOut?'#c53030':'#1e6038'}">${isOut?'-':'+'}$${fmtMoney(x.amt)}</div>
+        <div class="fc-amt" style="display:flex;align-items:center;justify-content:flex-end;gap:5px;color:${isOut?'#c53030':'#1e6038'}">${isOut?'-':'+'}$${fmtMoney(x.amt)}${extBtn}</div>
       </div>`;
     }).join('');
     return `<section class="cash-month">
