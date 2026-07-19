@@ -7708,6 +7708,7 @@ function renderCashInvoiceRow(inv){
           <button class="${inv.status==='sent'?'active sent':''}" onclick="setInvoicePaymentStatus('${inv.id}','sent')">待收</button>
           <button class="${inv.status==='paid'?'active paid':''}" onclick="setInvoicePaymentStatus('${inv.id}','paid')">已收</button>
         </div>
+        ${inv.status==='paid'?`<input type="date" class="cash-payout-date" style="margin-top:3px;width:100%;box-sizing:border-box" value="${escHtml((inv.paidDate||'').replace(/\//g,'-'))}" onchange="updateInvoicePaidDateFromCash('${inv.id}',this.value)" title="收款日期 — 會回寫至此張 Invoice 的收款日期欄位">`:''}
       </div>
       <div class="amt">$${fmtMoney(inv.total||0)}</div>
       <div class="chev">▶</div>
@@ -8032,7 +8033,17 @@ function setInvoicePaymentStatus(id,status){
   }
   inv.updatedAt=Date.now();
   saveInvoiceObj(inv);
-  toast(`已標記為「${status==='paid'?'已收款':'待收款'}」`);
+  // 立即重繪：切到已收時收款日期欄馬上出現（預設今日，可修改）
+  renderCashflow();
+  toast(status==='paid'?`已標記為「已收款」— 收款日期 ${inv.paidDate}（可於下方修改）`:'已標記為「待收款」');
+}
+// 金流頁的收款日期欄 — 與 Invoice 編輯器的「收款日期」為同一欄位（inv.paidDate）
+function updateInvoicePaidDateFromCash(id,val){
+  const inv=S.invoices[id];if(!inv)return;
+  inv.paidDate=val?val.replace(/-/g,'/'):'';
+  inv.updatedAt=Date.now();
+  saveInvoiceObj(inv);
+  toast(`收款日期已更新為 ${inv.paidDate||'（空）'}`);
 }
 
 // ═══════════════════════════════════════════════════
