@@ -7876,11 +7876,19 @@ function computeForecast(){
     if(buckets.has(ym))return ym;
     return ym<monthKeys[0]?monthKeys[0]:KEY_LATER;
   };
+  // 工作室收入預估：key → {c:已請款待收的工作室份, e:未請款案件估算}
+  const studioBy={};
+  const addStudio=(key,field,amt)=>{
+    if(amt<=0)return;
+    studioBy[key]=studioBy[key]||{c:0,e:0};
+    studioBy[key][field]+=amt;
+  };
   // A: sent invoices → 付款期限月份
   invoiceList().filter(i=>i.status==='sent').forEach(inv=>{
     const ym=(inv.dueDate||'').replace(/\//g,'-').slice(0,7);
     const c=S.clients[inv.clientId];
     buckets.get(keyFor(ym)).inflows.push({tier:'A',label:`${inv.invoiceNumber||''}｜${c?.name||'?'}`,date:inv.dueDate||'',amt:inv.total||0,click:`jumpToInvoice('${inv.id}')`});
+    addStudio(keyFor(ym),'c',computeInvoiceSplit(inv).totals.studio);
   });
   // B/C 收入 + LE 勞務估算：未請款的主案件
   Object.values(S.cases||{}).forEach(cs=>{
@@ -7901,6 +7909,11 @@ function computeForecast(){
     if(net>0&&(owner==='齊'||owner==='巫')){
       const cut=(cs.shareWithStudio!==false)?Math.round(net*0.7):net;
       if(cut>0)buckets.get(keyFor(ym)).outflows.push({tier:'LE',who:owner,label:`${owner} 勞務（估）｜${cs.title||''}`,date:cs.dueDate||'',amt:cut,click:`openEditCase('${cs.id}')`});
+      // 工作室份估算：分潤時拿 30%
+      if(cs.shareWithStudio!==false)addStudio(keyFor(ym),'e',net-Math.round(net*0.7));
+    }else if(net>0){
+      // 負責人未知 → 全歸工作室（與金流 split 規則一致）
+      addStudio(keyFor(ym),'e',net);
     }
   });
   // L: 已確定的勞務未付（sent/paid invoices 的未勾付款）→ 當月（已到期義務）
@@ -7943,6 +7956,10 @@ function computeForecast(){
   summary.qiConfirmed=shown.reduce((s,m)=>s+m.outflows.filter(x=>x.tier==='L'&&x.who==='齊').reduce((a,x)=>a+x.amt,0),0);
   summary.qiEstimated=shown.reduce((s,m)=>s+m.outflows.filter(x=>x.tier==='LE'&&x.who==='齊').reduce((a,x)=>a+x.amt,0),0);
   summary.qiIncome=summary.qiConfirmed+summary.qiEstimated;
+  // 工作室收入預估 = 已請款待收的工作室份 + 未請款案件的 30% 估算
+  summary.studioConfirmed=monthKeys.reduce((s,k)=>s+(studioBy[k]?.c||0),0);
+  summary.studioEstimated=monthKeys.reduce((s,k)=>s+(studioBy[k]?.e||0),0);
+  summary.studioIncome=summary.studioConfirmed+summary.studioEstimated;
   return {monthKeys,months,summary};
 }
 function renderForecast(){
@@ -7966,10 +7983,10 @@ function renderForecast(){
       <div class="val blue">$${fmtMoney(fc.summary.qiIncome)}</div>
       <div class="sub">已確定 $${fmtMoney(fc.summary.qiConfirmed)} · 估算 $${fmtMoney(fc.summary.qiEstimated)}</div>
     </div>
-    <div class="cash-card ${fc.summary.net>=0?'recv':''}" style="${fc.summary.net<0?'border-color:#e8aaaa;background:#fde8e8':''}">
-      <div class="lbl">💵 預估淨流入</div>
-      <div class="val ${fc.summary.net>=0?'green':''}" style="${fc.summary.net<0?'color:#c53030':''}">${fc.summary.net<0?'-':''}$${fmtMoney(Math.abs(fc.summary.net))}</div>
-      <div class="sub">進行中案件視為可能收入（灰字級別）</div>
+    <div class="cash-card studio">
+      <div class="lbl">🏠 近 4 個月預估工作室收入</div>
+      <div class="val gold">$${fmtMoney(fc.summary.studioIncome)}</div>
+      <div class="sub">已請款待收 $${fmtMoney(fc.summary.studioConfirmed)} · 估算 $${fmtMoney(fc.summary.studioEstimated)}</div>
     </div>`;
   const KEY_LABEL={later:'更遠（4 個月後）',nodate:'未設日期'};
   list.innerHTML=fc.months.filter(m=>fc.monthKeys.includes(m.key)||m.inflows.length||m.outflows.length).map(m=>{
