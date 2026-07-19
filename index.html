@@ -7333,19 +7333,44 @@ function computeInvoiceSplit(inv){
   // is computed on the group's combined amount, so discounts/加價 actually
   // flow into 分潤 (a standalone negative addon line used to clamp to net=0
   // and silently never reduce anyone's cut).
-  const lines=[];
-  let i=0;
-  while(i<items.length){
-    const it=items[i];
-    let sub=(it.defaultPrice||0)*(it.qty==null?1:it.qty);
-    let addonCount=0;
-    let j=i+1;
-    if(!it.isAddon){
-      while(j<items.length&&items[j].isAddon){
-        sub+=(items[j].defaultPrice||0)*(items[j].qty==null?1:items[j].qty);
-        addonCount++;j++;
+  // ── Pass 1：先掃出各群組（主項＋連續加減項）的收款金額，供專案支出「先扣後分」分攤 ──
+  const groups=[];
+  {
+    let i=0;
+    while(i<items.length){
+      const it=items[i];
+      let sub=(it.defaultPrice||0)*(it.qty==null?1:it.qty);
+      let addonCount=0;
+      let j=i+1;
+      if(!it.isAddon){
+        while(j<items.length&&items[j].isAddon){
+          sub+=(items[j].defaultPrice||0)*(items[j].qty==null?1:items[j].qty);
+          addonCount++;j++;
+        }
       }
+      groups.push({it,itemIdx:i,addonCount,sub});
+      i=(j>i+1)?j:i+1;
     }
+  }
+  // 專案支出：總收款先扣除，按各項目收款金額比例攤入淨額（尾差歸最後一項）
+  const totalExpenses=(inv.expenses||[]).reduce((s,e)=>s+(parseInt(e.amount)||0),0);
+  const totalSub=groups.reduce((s,g)=>s+Math.max(0,g.sub),0);
+  if(totalExpenses>0&&totalSub>0){
+    let allocated=0;
+    groups.forEach((g,gi)=>{
+      if(gi===groups.length-1){g.expShare=totalExpenses-allocated;}
+      else{
+        g.expShare=Math.round(totalExpenses*Math.max(0,g.sub)/totalSub);
+        allocated+=g.expShare;
+      }
+    });
+  }else{
+    groups.forEach(g=>{g.expShare=0;});
+  }
+  // ── Pass 2：逐群組計算稅、成本、淨額與分潤 ──
+  const lines=[];
+  for(const g of groups){
+    const {it,itemIdx,addonCount,sub}=g;
     const cs=it.sourceCaseId?S.cases[it.sourceCaseId]:null;
     // Per-item overrides (on the parent) win over the source case
     const cost=(it.cost!=null)
@@ -7361,7 +7386,8 @@ function computeInvoiceSplit(inv){
     //             'owner'（先分後扣 — 勞務方自付，外包是替代自己勞務的決策成本）
     const bearer=(cs?.isOutsourced&&cs?.outsource?.costBearer==='owner')?'owner':'project';
     const preSplitCost=bearer==='project'?cost:0;
-    const net=Math.max(0,sub-lineTax-preSplitCost);
+    // 淨額 = 收款 − 稅 − 專案外包成本 − 專案支出攤額 → 之後才按比例分
+    const net=Math.max(0,sub-lineTax-preSplitCost-(g.expShare||0));
     let qiCut=0,wuCut=0,studioCut=0;
     // Custom split overrides everything — exact %s applied to net (rounded, with studio
     // taking the rounding remainder so the three cuts sum to net exactly)
@@ -7392,28 +7418,14 @@ function computeInvoiceSplit(inv){
       else if(labor==='巫')wuCut=Math.max(0,wuCut-cost);
       else studioCut=Math.max(0,studioCut-cost);  // 無主 → 從工作室扣
     }
-    lines.push({it,itemIdx:i,addonCount,sub,tax:lineTax,cs,cost,ownerBorneCost,labor,shareStudio,net,qiCut,wuCut,studioCut});
-    i=(j>i+1)?j:i+1;
+    lines.push({it,itemIdx,addonCount,sub,tax:lineTax,cs,cost,ownerBorneCost,expShare:g.expShare||0,labor,shareStudio,net,qiCut,wuCut,studioCut});
   }
   const totals=lines.reduce((acc,l)=>{
     acc.sub+=l.sub;acc.tax+=l.tax;acc.cost+=l.cost;acc.net+=l.net;
     acc.qi+=l.qiCut;acc.wu+=l.wuCut;acc.studio+=l.studioCut;
     return acc;
   },{sub:0,tax:0,cost:0,net:0,qi:0,wu:0,studio:0});
-  // 專案支出（器材/場地租借等）：整個專案先扣，按三方當前比例分攤
-  const expenses=(inv.expenses||[]).reduce((s,e)=>s+(parseInt(e.amount)||0),0);
-  totals.expenses=expenses;
-  if(expenses>0){
-    const pool=totals.qi+totals.wu+totals.studio;
-    if(pool>0){
-      const E=Math.min(expenses,pool);  // clamp：支出超過分潤池就全部歸零
-      const qiDed=Math.round(E*totals.qi/pool);
-      const wuDed=Math.round(E*totals.wu/pool);
-      const stDed=E-qiDed-wuDed;  // 尾差歸工作室
-      totals.qi-=qiDed;totals.wu-=wuDed;totals.studio-=stDed;
-      totals.expenseDeducted={qi:qiDed,wu:wuDed,studio:stDed};
-    }
-  }
+  totals.expenses=totalExpenses;  // 已於淨額中先行扣除（先扣後分）
   return {lines,totals};
 }
 
@@ -7664,11 +7676,13 @@ function renderCashInvoiceRow(inv){
     const taxMark=l.tax?`<span style="color:#c53030;font-size:.6rem;margin-left:4px" title="免稅優惠 — 稅內含於收款，分潤以稅後金額計算">· 稅 -$${fmtMoney(l.tax)}</span>`:'';
     // 外包自付（先分後扣）：勞務方份額已扣掉外包費
     const ownerCostMark=l.ownerBorneCost?`<span style="color:#a86a00;font-size:.6rem;margin-left:4px" title="外包成本歸屬＝勞務方自付：${escHtml(l.labor)}的份額已扣此外包費">· 外包自付 -$${fmtMoney(l.ownerBorneCost)}</span>`:'';
+    // 專案支出攤額（總收款先扣後分 — 已計入此行淨額）
+    const expMark=l.expShare?`<span style="color:#a08560;font-size:.6rem;margin-left:4px" title="專案支出按收款金額比例攤入此行淨額">· 支出攤 -$${fmtMoney(l.expShare)}</span>`:'';
     // Highlight items whose overrides differ from source case (or that have no case)
     const overridden=(l.it.laborOwner||l.it.cost!=null||l.it.shareWithStudio!=null||l.it.customSplit);
     const editBg=overridden?'background:#fff8ee':'';
     return `<div class="cash-line">
-      <div class="lab">${escHtml(l.it.label||'')}<div class="who">${csTitle} · 負責: ${escHtml(l.labor)}${ssMark}${addonMark}${taxMark}${ownerCostMark}</div></div>
+      <div class="lab">${escHtml(l.it.label||'')}<div class="who">${csTitle} · 負責: ${escHtml(l.labor)}${ssMark}${addonMark}${taxMark}${ownerCostMark}${expMark}</div></div>
       <div class="num">$${fmtMoney(l.sub)}</div>
       <div class="num cost">${l.ownerBorneCost?`<span style="color:#a86a00" title="勞務方自付，不先自專案扣除">(-$${fmtMoney(l.ownerBorneCost)})</span>`:(l.cost?'-$'+fmtMoney(l.cost):'—')}</div>
       <div class="num">$${fmtMoney(l.net)}</div>
@@ -7743,7 +7757,7 @@ function renderCashInvoiceRow(inv){
         <div class="num" style="color:#a08560" ${split.totals.tax?`title="工作室實收：分潤 $${fmtMoney(split.totals.studio)} ＋ 代繳稅 $${fmtMoney(split.totals.tax)}"`:''}>$${fmtMoney(split.totals.studio+split.totals.tax)}</div>
         <div></div>
       </div>
-      ${split.totals.expenses>0?`<div style="text-align:right;padding:4px;font-size:.64rem;color:#a08560">已扣專案支出 $${fmtMoney(split.totals.expenses)}${split.totals.expenseDeducted?`（齊 -$${fmtMoney(split.totals.expenseDeducted.qi)} · 巫 -$${fmtMoney(split.totals.expenseDeducted.wu)} · 工作室 -$${fmtMoney(split.totals.expenseDeducted.studio)}）`:'（分潤池為 0，無法扣除）'}</div>`:''}
+      ${split.totals.expenses>0?`<div style="text-align:right;padding:4px;font-size:.64rem;color:#a08560">專案支出 $${fmtMoney(split.totals.expenses)} 已自總收款先扣除（計入淨額），餘額再按比例分配</div>`:''}
       ${split.totals.tax>0?`<div style="text-align:right;padding:4px;font-size:.64rem;color:#c53030">已扣 5% 稅金 $${fmtMoney(split.totals.tax)}（免稅優惠 — 稅內含於收款，分潤以稅後金額計算）</div>`:''}
       <div style="text-align:right;padding:4px;font-size:.68rem;color:#a08560;font-weight:700">🏠 工作室實收 $${fmtMoney(split.totals.studio+split.totals.tax)}${split.totals.tax>0?`<span style="font-weight:400;color:#888">（分潤 $${fmtMoney(split.totals.studio)} ＋ 代繳稅 $${fmtMoney(split.totals.tax)}）</span>`:''}</div>
       <div class="cash-payouts">
