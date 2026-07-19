@@ -7571,6 +7571,7 @@ function renderCashInvoiceRow(inv){
         <div></div>
       </div>
       ${split.totals.tax>0?`<div style="text-align:right;padding:4px;font-size:.64rem;color:#c53030">已扣 5% 稅金 $${fmtMoney(split.totals.tax)}（免稅優惠 — 稅內含於收款，分潤以稅後金額計算）</div>`:''}
+      <div style="text-align:right;padding:4px;font-size:.68rem;color:#a08560;font-weight:700">🏠 工作室實收 $${fmtMoney(split.totals.studio+split.totals.tax)}${split.totals.tax>0?`<span style="font-weight:400;color:#888">（分潤 $${fmtMoney(split.totals.studio)} ＋ 代繳稅 $${fmtMoney(split.totals.tax)}）</span>`:''}</div>
       <div class="cash-payouts">
         <div class="lbl" style="text-align:right">付款狀態 →</div>
         <div></div><div></div><div></div>
