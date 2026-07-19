@@ -1308,6 +1308,15 @@ select.form-select:focus{border-color:#666666}
         <span style="font-size:.7rem;color:#666">支出自動算 = </span>
         <span id="f-outsource-cost-display" style="font-family:'JetBrains Mono',monospace;color:#1e6038;font-weight:700;font-size:.85rem">$0</span>
       </div>
+      <div style="display:flex;gap:14px;align-items:center;margin-top:8px;padding-top:8px;border-top:1px dashed #b8e0c4;font-size:.74rem;flex-wrap:wrap">
+        <span style="color:#1e6038;font-weight:700;font-size:.68rem">外包成本歸屬</span>
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer" title="先分潤，再由負責人的份額支付外包費（外包＝替代自己勞務的決策成本）">
+          <input type="radio" name="f-cost-bearer" id="f-cost-bearer-owner" value="owner" style="accent-color:#1e6038"> 勞務方自付（先分後扣）
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer" title="外包費視為專案成本，先自專案扣除後才分潤（三方共同承擔）">
+          <input type="radio" name="f-cost-bearer" id="f-cost-bearer-project" value="project" style="accent-color:#1e6038"> 專案共同（先扣再分）
+        </label>
+      </div>
       <div id="f-outsource-filename-preview" style="display:none;margin-top:8px;padding:6px 10px;background:#fafafa;border:1px dashed #d8d8d8;border-radius:6px;font-size:.66rem;color:#666;font-family:'JetBrains Mono',monospace"></div>
     </div>
 
@@ -2622,6 +2631,9 @@ function openAddCase(){
   document.getElementById('f-outsourcer-id').value='';
   document.getElementById('f-outsource-tier').value='';
   document.getElementById('f-outsource-rush').checked=false;
+  // 新案件預設：外包成本由勞務方自付（先分後扣）
+  document.getElementById('f-cost-bearer-owner').checked=true;
+  document.getElementById('f-cost-bearer-project').checked=false;
   onFOutsourcedChange();
   document.getElementById('f-share-studio').checked=true;  // default share with studio
   // billing-link defaults: independent
@@ -2686,6 +2698,10 @@ function openEditCase(id){
   document.getElementById('f-outsourcer-id').value=c.outsource?.outsourcerId||'';
   document.getElementById('f-outsource-tier').value=c.outsource?.tierLabel||'';
   document.getElementById('f-outsource-rush').checked=!!c.outsource?.isRush;
+  // 外包成本歸屬：舊資料無欄位 → project（維持歷史分潤數字不變）
+  const bearer=c.outsource?.costBearer==='owner'?'owner':'project';
+  document.getElementById('f-cost-bearer-owner').checked=bearer==='owner';
+  document.getElementById('f-cost-bearer-project').checked=bearer==='project';
   onFOutsourcedChange();
   // shareWithStudio default true (legacy cases without the field share by default)
   document.getElementById('f-share-studio').checked=c.shareWithStudio!==false;
@@ -3200,6 +3216,7 @@ function saveCase(){
       outsourcerId:document.getElementById('f-outsourcer-id').value||null,
       tierLabel:document.getElementById('f-outsource-tier').value||null,
       isRush:document.getElementById('f-outsource-rush').checked,
+      costBearer:document.getElementById('f-cost-bearer-owner').checked?'owner':'project',
       paidAt:S.editCaseId?(S.cases[S.editCaseId]?.outsource?.paidAt??null):null,
     }:null,
     shareWithStudio:document.getElementById('f-share-studio').checked,
@@ -7323,7 +7340,11 @@ function computeInvoiceSplit(inv){
       ?!!it.shareWithStudio
       :(cs?(cs.shareWithStudio!==false):true);
     const lineTax=(taxable&&sub>0)?Math.round(sub-sub/1.05):0;
-    const net=Math.max(0,sub-lineTax-cost);
+    // 外包成本歸屬：'project'（先扣再分＝舊制，無欄位的舊案件一律走這裡）
+    //             'owner'（先分後扣 — 勞務方自付，外包是替代自己勞務的決策成本）
+    const bearer=(cs?.isOutsourced&&cs?.outsource?.costBearer==='owner')?'owner':'project';
+    const preSplitCost=bearer==='project'?cost:0;
+    const net=Math.max(0,sub-lineTax-preSplitCost);
     let qiCut=0,wuCut=0,studioCut=0;
     // Custom split overrides everything — exact %s applied to net (rounded, with studio
     // taking the rounding remainder so the three cuts sum to net exactly)
@@ -7346,7 +7367,15 @@ function computeInvoiceSplit(inv){
       else if(labor==='巫')wuCut=net;
       else studioCut=net;
     }
-    lines.push({it,itemIdx:i,addonCount,sub,tax:lineTax,cs,cost,labor,shareStudio,net,qiCut,wuCut,studioCut});
+    // owner-借模式：分完後由勞務方的份額自付外包費（clamp 0）
+    let ownerBorneCost=0;
+    if(bearer==='owner'&&cost>0){
+      ownerBorneCost=cost;
+      if(labor==='齊')qiCut=Math.max(0,qiCut-cost);
+      else if(labor==='巫')wuCut=Math.max(0,wuCut-cost);
+      else studioCut=Math.max(0,studioCut-cost);  // 無主 → 從工作室扣
+    }
+    lines.push({it,itemIdx:i,addonCount,sub,tax:lineTax,cs,cost,ownerBorneCost,labor,shareStudio,net,qiCut,wuCut,studioCut});
     i=(j>i+1)?j:i+1;
   }
   const totals=lines.reduce((acc,l)=>{
@@ -7354,9 +7383,47 @@ function computeInvoiceSplit(inv){
     acc.qi+=l.qiCut;acc.wu+=l.wuCut;acc.studio+=l.studioCut;
     return acc;
   },{sub:0,tax:0,cost:0,net:0,qi:0,wu:0,studio:0});
+  // 專案支出（器材/場地租借等）：整個專案先扣，按三方當前比例分攤
+  const expenses=(inv.expenses||[]).reduce((s,e)=>s+(parseInt(e.amount)||0),0);
+  totals.expenses=expenses;
+  if(expenses>0){
+    const pool=totals.qi+totals.wu+totals.studio;
+    if(pool>0){
+      const E=Math.min(expenses,pool);  // clamp：支出超過分潤池就全部歸零
+      const qiDed=Math.round(E*totals.qi/pool);
+      const wuDed=Math.round(E*totals.wu/pool);
+      const stDed=E-qiDed-wuDed;  // 尾差歸工作室
+      totals.qi-=qiDed;totals.wu-=wuDed;totals.studio-=stDed;
+      totals.expenseDeducted={qi:qiDed,wu:wuDed,studio:stDed};
+    }
+  }
   return {lines,totals};
 }
 
+// ── 專案支出 CRUD（存於 inv.expenses，先扣後分）──
+function addInvExpense(invId){
+  const inv=S.invoices[invId];if(!inv)return;
+  inv.expenses=inv.expenses||[];
+  inv.expenses.push({id:uid(),category:'器材租借',label:'',amount:0});
+  inv.updatedAt=Date.now();
+  saveInvoiceObj(inv);
+  renderCashflow();
+}
+function updateInvExpense(invId,expId,field,val){
+  const inv=S.invoices[invId];if(!inv)return;
+  const e=(inv.expenses||[]).find(x=>x.id===expId);if(!e)return;
+  e[field]=val;
+  inv.updatedAt=Date.now();
+  saveInvoiceObj(inv);
+  renderCashflow();
+}
+function delInvExpense(invId,expId){
+  const inv=S.invoices[invId];if(!inv)return;
+  inv.expenses=(inv.expenses||[]).filter(x=>x.id!==expId);
+  inv.updatedAt=Date.now();
+  saveInvoiceObj(inv);
+  renderCashflow();
+}
 // ── PER-LINE OVERRIDE (cashflow) — 負責 / 外包成本 / 分潤 ──
 function openCashItemEdit(invId,idx){
   const inv=S.invoices[invId];if(!inv)return;
@@ -7566,13 +7633,15 @@ function renderCashInvoiceRow(inv){
     const addonMark=l.addonCount?`<span style="color:#a08560;font-size:.6rem;margin-left:4px" title="金額已含加減項">· 含 ${l.addonCount} 加減項</span>`:'';
     // 免稅優惠 invoice：分潤前先扣掉內含的 5% 稅
     const taxMark=l.tax?`<span style="color:#c53030;font-size:.6rem;margin-left:4px" title="免稅優惠 — 稅內含於收款，分潤以稅後金額計算">· 稅 -$${fmtMoney(l.tax)}</span>`:'';
+    // 外包自付（先分後扣）：勞務方份額已扣掉外包費
+    const ownerCostMark=l.ownerBorneCost?`<span style="color:#a86a00;font-size:.6rem;margin-left:4px" title="外包成本歸屬＝勞務方自付：${escHtml(l.labor)}的份額已扣此外包費">· 外包自付 -$${fmtMoney(l.ownerBorneCost)}</span>`:'';
     // Highlight items whose overrides differ from source case (or that have no case)
     const overridden=(l.it.laborOwner||l.it.cost!=null||l.it.shareWithStudio!=null||l.it.customSplit);
     const editBg=overridden?'background:#fff8ee':'';
     return `<div class="cash-line">
-      <div class="lab">${escHtml(l.it.label||'')}<div class="who">${csTitle} · 負責: ${escHtml(l.labor)}${ssMark}${addonMark}${taxMark}</div></div>
+      <div class="lab">${escHtml(l.it.label||'')}<div class="who">${csTitle} · 負責: ${escHtml(l.labor)}${ssMark}${addonMark}${taxMark}${ownerCostMark}</div></div>
       <div class="num">$${fmtMoney(l.sub)}</div>
-      <div class="num cost">${l.cost?'-$'+fmtMoney(l.cost):'—'}</div>
+      <div class="num cost">${l.ownerBorneCost?`<span style="color:#a86a00" title="勞務方自付，不先自專案扣除">(-$${fmtMoney(l.ownerBorneCost)})</span>`:(l.cost?'-$'+fmtMoney(l.cost):'—')}</div>
       <div class="num">$${fmtMoney(l.net)}</div>
       <div class="num split-q">${l.qiCut?'$'+fmtMoney(l.qiCut):'—'}</div>
       <div class="num split-w">${l.wuCut?'$'+fmtMoney(l.wuCut):'—'}</div>
@@ -7605,6 +7674,20 @@ function renderCashInvoiceRow(inv){
         <div>項目</div><div style="text-align:right">金額</div><div style="text-align:right">外包</div><div style="text-align:right">淨額</div><div style="text-align:right">齊</div><div style="text-align:right">巫</div><div style="text-align:right">工作室</div><div></div>
       </div>
       ${linesHtml}
+      <div style="margin:8px 0;padding:8px 10px;background:#faf6ee;border:1px dashed #d8c8aa;border-radius:7px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${(inv.expenses||[]).length?'6px':'0'}">
+          <span style="font-size:.64rem;font-weight:700;color:#a08560;letter-spacing:.4px">📦 專案支出（先扣後分 — 按分潤比例自三方扣除）</span>
+          <button class="nav-btn" onclick="addInvExpense('${inv.id}')" style="font-size:.64rem;padding:2px 8px">＋ 支出</button>
+        </div>
+        ${(inv.expenses||[]).map(e=>`<div style="display:grid;grid-template-columns:120px 1fr 110px 26px;gap:6px;align-items:center;margin-bottom:4px">
+          <select onchange="updateInvExpense('${inv.id}','${e.id}','category',this.value)" style="font-size:.68rem;padding:3px 6px;border:1px solid #d8d8d8;border-radius:4px;background:#fff;font-family:inherit">
+            ${['器材租借','場地租借','其他'].map(cat=>`<option value="${cat}" ${e.category===cat?'selected':''}>${cat}</option>`).join('')}
+          </select>
+          <input type="text" value="${escHtml(e.label||'')}" placeholder="說明（例：三創12F 一日）" onchange="updateInvExpense('${inv.id}','${e.id}','label',this.value)" style="font-size:.68rem;padding:3px 6px;border:1px solid #d8d8d8;border-radius:4px;background:#fff;font-family:inherit">
+          <input type="number" value="${e.amount||0}" onchange="updateInvExpense('${inv.id}','${e.id}','amount',parseInt(this.value)||0)" style="font-size:.68rem;padding:3px 6px;border:1px solid #d8d8d8;border-radius:4px;background:#fff;font-family:'JetBrains Mono',monospace;text-align:right">
+          <button class="act-btn del" onclick="delInvExpense('${inv.id}','${e.id}')" title="刪除" style="padding:2px 4px">✕</button>
+        </div>`).join('')}
+      </div>
       <div class="cash-totals">
         <div>合計</div>
         <div class="num">$${fmtMoney(split.totals.sub)}</div>
@@ -7615,6 +7698,7 @@ function renderCashInvoiceRow(inv){
         <div class="num" style="color:#a08560" ${split.totals.tax?`title="工作室實收：分潤 $${fmtMoney(split.totals.studio)} ＋ 代繳稅 $${fmtMoney(split.totals.tax)}"`:''}>$${fmtMoney(split.totals.studio+split.totals.tax)}</div>
         <div></div>
       </div>
+      ${split.totals.expenses>0?`<div style="text-align:right;padding:4px;font-size:.64rem;color:#a08560">已扣專案支出 $${fmtMoney(split.totals.expenses)}${split.totals.expenseDeducted?`（齊 -$${fmtMoney(split.totals.expenseDeducted.qi)} · 巫 -$${fmtMoney(split.totals.expenseDeducted.wu)} · 工作室 -$${fmtMoney(split.totals.expenseDeducted.studio)}）`:'（分潤池為 0，無法扣除）'}</div>`:''}
       ${split.totals.tax>0?`<div style="text-align:right;padding:4px;font-size:.64rem;color:#c53030">已扣 5% 稅金 $${fmtMoney(split.totals.tax)}（免稅優惠 — 稅內含於收款，分潤以稅後金額計算）</div>`:''}
       <div style="text-align:right;padding:4px;font-size:.68rem;color:#a08560;font-weight:700">🏠 工作室實收 $${fmtMoney(split.totals.studio+split.totals.tax)}${split.totals.tax>0?`<span style="font-weight:400;color:#888">（分潤 $${fmtMoney(split.totals.studio)} ＋ 代繳稅 $${fmtMoney(split.totals.tax)}）</span>`:''}</div>
       <div class="cash-payouts">
@@ -7948,18 +8032,22 @@ function computeForecast(){
       const tier=st==='done'?'B':'C';
       buckets.get(keyFor(ym)).inflows.push({tier,label:`${cs.title||''}｜${cName}`,date:cs.dueDate||'',amt,click:`openEditCase('${cs.id}')`});
     }
-    // 勞務估算：net = 金額 − 外包成本；分潤 70% / 不分潤 100%（粗估，不含稅內含與覆寫）
+    // 勞務估算（粗估，不含稅內含與覆寫）：
+    //   外包歸屬 project（舊制）→ net = 金額 − 外包成本，再分 70/100%
+    //   外包歸屬 owner → 先按全額分，再由勞務方份額扣外包費
     const cost=cs.isOutsourced?computeOutsourceCost(cs):(cs.cost||0);
-    const net=Math.max(0,amt-cost);
+    const bearer=(cs.isOutsourced&&cs.outsource?.costBearer==='owner')?'owner':'project';
+    const net=Math.max(0,amt-(bearer==='project'?cost:0));
     const owner=cs.laborOwner||'齊';
     if(net>0&&(owner==='齊'||owner==='巫')){
-      const cut=(cs.shareWithStudio!==false)?Math.round(net*0.7):net;
+      let cut=(cs.shareWithStudio!==false)?Math.round(net*0.7):net;
+      if(bearer==='owner')cut=Math.max(0,cut-cost);
       if(cut>0)buckets.get(keyFor(ym)).outflows.push({tier:'LE',who:owner,label:`${owner} 勞務（估）｜${cs.title||''}`,date:cs.dueDate||'',amt:cut,click:`openEditCase('${cs.id}')`});
-      // 工作室份估算：分潤時拿 30%
+      // 工作室份估算：分潤時拿 30%（owner 模式下不受外包費影響）
       if(cs.shareWithStudio!==false)addStudio(keyFor(ym),'e',net-Math.round(net*0.7));
     }else if(net>0){
       // 負責人未知 → 全歸工作室（與金流 split 規則一致）
-      addStudio(keyFor(ym),'e',net);
+      addStudio(keyFor(ym),'e',bearer==='owner'?Math.max(0,net-cost):net);
     }
   });
   // L: 已確定的勞務未付（sent/paid invoices 的未勾付款）→ 當月（已到期義務）
