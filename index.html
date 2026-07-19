@@ -7863,7 +7863,7 @@ const FC_TIERS={
 function computeForecast(){
   const now=new Date();
   const monthKeys=[];
-  for(let k=0;k<4;k++){
+  for(let k=0;k<3;k++){
     const d=new Date(now.getFullYear(),now.getMonth()+k,1);
     monthKeys.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
   }
@@ -7974,21 +7974,21 @@ function renderForecast(){
   const ts=fc.summary.tierSums;
   summaryEl.innerHTML=`
     <div class="cash-card recv">
-      <div class="lbl">📥 近 4 個月預估流入</div>
+      <div class="lbl">📥 近 3 個月預估流入</div>
       <div class="val green">$${fmtMoney(fc.summary.inflow)}</div>
       <div class="sub">待收 $${fmtMoney(ts.A)} · 未請款 $${fmtMoney(ts.B)} · 進行中 $${fmtMoney(ts.C)}</div>
     </div>
     <div class="cash-card paid">
-      <div class="lbl">💰 近 4 個月預估收入（齊）</div>
+      <div class="lbl">💰 近 3 個月預估收入（齊）</div>
       <div class="val blue">$${fmtMoney(fc.summary.qiIncome)}</div>
       <div class="sub">已確定 $${fmtMoney(fc.summary.qiConfirmed)} · 估算 $${fmtMoney(fc.summary.qiEstimated)}</div>
     </div>
     <div class="cash-card studio">
-      <div class="lbl">🏠 近 4 個月預估工作室收入</div>
+      <div class="lbl">🏠 近 3 個月預估工作室收入</div>
       <div class="val gold">$${fmtMoney(fc.summary.studioIncome)}</div>
       <div class="sub">已請款待收 $${fmtMoney(fc.summary.studioConfirmed)} · 估算 $${fmtMoney(fc.summary.studioEstimated)}</div>
     </div>`;
-  const KEY_LABEL={later:'更遠（4 個月後）',nodate:'未設日期'};
+  const KEY_LABEL={later:'更遠（3 個月後）',nodate:'未設日期'};
   list.innerHTML=fc.months.filter(m=>fc.monthKeys.includes(m.key)||m.inflows.length||m.outflows.length).map(m=>{
     const pretty=KEY_LABEL[m.key]||m.key.replace('-',' / ');
     const pill=(t,amt)=>amt>0?`<div class="cash-month-pill" style="background:#fff;border-color:${FC_TIERS[t].color}44"><div class="k" style="color:${FC_TIERS[t].color}">${FC_TIERS[t].name}</div><div class="v" style="color:${FC_TIERS[t].color}">$${fmtMoney(amt)}</div></div>`:'';
