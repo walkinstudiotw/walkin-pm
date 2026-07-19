@@ -7900,7 +7900,7 @@ function computeForecast(){
     const owner=cs.laborOwner||'齊';
     if(net>0&&(owner==='齊'||owner==='巫')){
       const cut=(cs.shareWithStudio!==false)?Math.round(net*0.7):net;
-      if(cut>0)buckets.get(keyFor(ym)).outflows.push({tier:'LE',label:`${owner} 勞務（估）｜${cs.title||''}`,date:cs.dueDate||'',amt:cut,click:`openEditCase('${cs.id}')`});
+      if(cut>0)buckets.get(keyFor(ym)).outflows.push({tier:'LE',who:owner,label:`${owner} 勞務（估）｜${cs.title||''}`,date:cs.dueDate||'',amt:cut,click:`openEditCase('${cs.id}')`});
     }
   });
   // L: 已確定的勞務未付（sent/paid invoices 的未勾付款）→ 當月（已到期義務）
@@ -7908,7 +7908,7 @@ function computeForecast(){
     const split=computeInvoiceSplit(inv);
     [['qi','齊',split.totals.qi],['wu','巫',split.totals.wu]].forEach(([k,name,amtK])=>{
       if(amtK>0&&!inv.payouts?.[k]?.paid){
-        buckets.get(monthKeys[0]).outflows.push({tier:'L',label:`${name} 勞務未付｜${inv.invoiceNumber||''}`,date:'',amt:amtK,click:`jumpToInvoice('${inv.id}')`});
+        buckets.get(monthKeys[0]).outflows.push({tier:'L',who:name,label:`${name} 勞務未付｜${inv.invoiceNumber||''}`,date:'',amt:amtK,click:`jumpToInvoice('${inv.id}')`});
       }
     });
   });
@@ -7939,6 +7939,10 @@ function computeForecast(){
   Object.keys(FC_TIERS).forEach(t=>{
     summary.tierSums[t]=shown.reduce((s,m)=>s+[...m.inflows,...m.outflows].filter(x=>x.tier===t).reduce((a,x)=>a+x.amt,0),0);
   });
+  // 齊的個人收入預估 = 屬於齊的 勞務未付(已確定) + 勞務(估)
+  summary.qiConfirmed=shown.reduce((s,m)=>s+m.outflows.filter(x=>x.tier==='L'&&x.who==='齊').reduce((a,x)=>a+x.amt,0),0);
+  summary.qiEstimated=shown.reduce((s,m)=>s+m.outflows.filter(x=>x.tier==='LE'&&x.who==='齊').reduce((a,x)=>a+x.amt,0),0);
+  summary.qiIncome=summary.qiConfirmed+summary.qiEstimated;
   return {monthKeys,months,summary};
 }
 function renderForecast(){
@@ -7957,10 +7961,10 @@ function renderForecast(){
       <div class="val green">$${fmtMoney(fc.summary.inflow)}</div>
       <div class="sub">待收 $${fmtMoney(ts.A)} · 未請款 $${fmtMoney(ts.B)} · 進行中 $${fmtMoney(ts.C)}</div>
     </div>
-    <div class="cash-card" style="border-color:#e8aaaa;background:#fde8e8">
-      <div class="lbl" style="color:#c53030">📤 近 4 個月預估流出</div>
-      <div class="val" style="color:#c53030">$${fmtMoney(fc.summary.outflow)}</div>
-      <div class="sub">外包 $${fmtMoney(ts.O)} · 勞務 $${fmtMoney(ts.L+ts.LE)}</div>
+    <div class="cash-card paid">
+      <div class="lbl">💰 近 4 個月預估收入（齊）</div>
+      <div class="val blue">$${fmtMoney(fc.summary.qiIncome)}</div>
+      <div class="sub">已確定 $${fmtMoney(fc.summary.qiConfirmed)} · 估算 $${fmtMoney(fc.summary.qiEstimated)}</div>
     </div>
     <div class="cash-card ${fc.summary.net>=0?'recv':''}" style="${fc.summary.net<0?'border-color:#e8aaaa;background:#fde8e8':''}">
       <div class="lbl">💵 預估淨流入</div>
