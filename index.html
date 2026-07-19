@@ -7531,7 +7531,7 @@ function renderCashInvoiceRow(inv){
       <div class="num">$${fmtMoney(l.net)}</div>
       <div class="num split-q">${l.qiCut?'$'+fmtMoney(l.qiCut):'—'}</div>
       <div class="num split-w">${l.wuCut?'$'+fmtMoney(l.wuCut):'—'}</div>
-      <div class="num split-s">${l.studioCut?'$'+fmtMoney(l.studioCut):'—'}</div>
+      <div class="num split-s" ${l.tax?`title="工作室實收：分潤 $${fmtMoney(l.studioCut)} ＋ 代繳稅 $${fmtMoney(l.tax)}"`:''}>${(l.studioCut+l.tax)?'$'+fmtMoney(l.studioCut+l.tax):'—'}</div>
       <button class="act-btn" onclick="openCashItemEdit('${inv.id}',${l.itemIdx})" title="編輯分潤設定" style="padding:2px 4px;${editBg}">✎</button>
     </div>`;
   }).join('');
@@ -7567,7 +7567,7 @@ function renderCashInvoiceRow(inv){
         <div class="num">$${fmtMoney(split.totals.net)}</div>
         <div class="num" style="color:#1e4a80">$${fmtMoney(split.totals.qi)}</div>
         <div class="num" style="color:#a86a00">$${fmtMoney(split.totals.wu)}</div>
-        <div class="num" style="color:#a08560">$${fmtMoney(split.totals.studio)}</div>
+        <div class="num" style="color:#a08560" ${split.totals.tax?`title="工作室實收：分潤 $${fmtMoney(split.totals.studio)} ＋ 代繳稅 $${fmtMoney(split.totals.tax)}"`:''}>$${fmtMoney(split.totals.studio+split.totals.tax)}</div>
         <div></div>
       </div>
       ${split.totals.tax>0?`<div style="text-align:right;padding:4px;font-size:.64rem;color:#c53030">已扣 5% 稅金 $${fmtMoney(split.totals.tax)}（免稅優惠 — 稅內含於收款，分潤以稅後金額計算）</div>`:''}
