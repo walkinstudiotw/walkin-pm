@@ -1411,7 +1411,7 @@ select.form-select:focus{border-color:#666666}
           </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.78rem;color:#666666;margin-top:6px">
             <input type="checkbox" id="cl-one-time" style="accent-color:#888">
-            <span>其他分類（一次性合作客戶 — 在客戶與報價單列表歸入「其他」區）</span>
+            <span>其他分類（在客戶與報價單列表歸入「其他」區）</span>
           </label>
         </div>
         <div class="form-group">
@@ -3272,7 +3272,7 @@ function renderClients(){
   const cardHtml=(c)=>{
     const cnt=caseList().filter(x=>x.clientId===c.id).length;
     const finalizedCnt=Object.keys(c.finalizedQuotations||{}).length;
-    const otBadge=c.isOneTime?'<span style="font-size:.58rem;color:#888;background:#f0f0f0;border:1px solid #d8d8d8;border-radius:8px;padding:1px 7px;margin-left:6px;vertical-align:middle">一次性</span>':'';
+    const otBadge=c.isOneTime?'<span style="font-size:.58rem;color:#888;background:#f0f0f0;border:1px solid #d8d8d8;border-radius:8px;padding:1px 7px;margin-left:6px;vertical-align:middle">其他</span>':'';
     return`<div class="client-card" onclick="openEditClient('${c.id}')">
       <div class="client-card-name">${escHtml(c.name)}${otBadge}</div>
       <div class="client-card-row"><b>聯絡人</b>${escHtml(c.contactName||'—')}</div>
@@ -3284,14 +3284,14 @@ function renderClients(){
       </div>
     </div>`;
   };
-  // 分區：常態合作在前，「其他（一次性合作）」獨立一區
+  // 分區：常態合作在前，「其他」獨立一區
   const regular=list.filter(c=>!c.isOneTime);
   const oneTime=list.filter(c=>c.isOneTime);
   const sec=(label,n)=>`<div style="grid-column:1/-1;font-size:.66rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.6px;padding:6px 2px 2px;border-bottom:1px solid #e8e8e8;display:flex;justify-content:space-between"><span>${label}</span><span>${n} 位</span></div>`;
   let html='';
   if(regular.length&&oneTime.length)html+=sec('合作客戶',regular.length);
   html+=regular.map(cardHtml).join('');
-  if(oneTime.length)html+=sec('🗂 其他（一次性合作）',oneTime.length)+oneTime.map(cardHtml).join('');
+  if(oneTime.length)html+=sec('🗂 其他',oneTime.length)+oneTime.map(cardHtml).join('');
   grid.innerHTML=html;
 }
 function goToQuote(cid){S.selectedClientForQuote=cid;switchTab('quotations');}
@@ -4002,12 +4002,12 @@ function renderSidebarClientSubmenu(){
       <span class="cnt${cntCls}" title="已完成 ${cnt} 版">${cnt}</span>
     </div>`;
   };
-  // 常態合作在前；一次性合作客戶收進「其他」小節
+  // 常態合作在前；其他分類客戶收進「其他」小節
   const regular=list.filter(c=>!c.isOneTime);
   const oneTime=list.filter(c=>c.isOneTime);
   let html=regular.map(itemHtml).join('');
   if(oneTime.length){
-    html+=`<div style="padding:6px 18px 3px;font-size:.58rem;color:#888;letter-spacing:.5px;font-weight:700;border-top:1px dashed #e8e8e8;margin-top:4px">🗂 其他（一次性）</div>`;
+    html+=`<div style="padding:6px 18px 3px;font-size:.58rem;color:#888;letter-spacing:.5px;font-weight:700;border-top:1px dashed #e8e8e8;margin-top:4px">🗂 其他</div>`;
     html+=oneTime.map(itemHtml).join('');
   }
   sub.innerHTML=html;
