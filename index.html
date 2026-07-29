@@ -4330,6 +4330,10 @@ function renderQuoteEditor(main,c){
             <input type="checkbox" ${c.quotation.showSignature?'checked':''} onchange="updateQuoteMeta('showSignature',this.checked)" style="accent-color:#1e6038">
             顯示客戶簽章區
           </label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer" title="取消勾選 → PDF 上 Bundle 只顯示一行總價，不列出內含項目與逐項單價">
+            <input type="checkbox" ${c.quotation.showBundleDetails!==false?'checked':''} onchange="updateQuoteMeta('showBundleDetails',this.checked)" style="accent-color:#1e6038">
+            顯示 Bundle 細項（內含項目與單價）
+          </label>
         </div>
       </div>
     </div>
@@ -8400,7 +8404,8 @@ function buildPdfTemplateD(client){
           <td class="right">$${fmtMoney(sub)}</td>
         </tr>`;
         // If this is a bundle row, append child preview rows (info-only: 單價/數量/單位, no subtotal)
-        if(it.bundleSourceId&&bw?.isBundle){
+        // q.showBundleDetails=false → Bundle 只留一行總價，不讓客戶逐項對照
+        if(it.bundleSourceId&&bw?.isBundle&&q.showBundleDetails!==false){
           if(bw.bundleChildIds?.length){
             const subMap=bw.bundleChildSubItems||{};
             // For each child, resolve display label + effective price (sub-item if chosen, else default)
