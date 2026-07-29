@@ -1409,6 +1409,10 @@ select.form-select:focus{border-color:#666666}
             <input type="checkbox" id="cl-issues-receipt" style="accent-color:#1e6038">
             <span>開立發票（產生 Invoice 時預設帶入 5% 稅金）</span>
           </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.78rem;color:#666666;margin-top:6px">
+            <input type="checkbox" id="cl-one-time" style="accent-color:#888">
+            <span>其他分類（一次性合作客戶 — 在客戶與報價單列表歸入「其他」區）</span>
+          </label>
         </div>
         <div class="form-group">
           <label class="form-label">備註</label>
@@ -3265,11 +3269,12 @@ function renderClients(){
   // re-show top "+ 新增客戶" button regardless
   if(!list.length){grid.innerHTML='';empty.style.display='flex';return;}
   empty.style.display='none';
-  grid.innerHTML=list.map(c=>{
+  const cardHtml=(c)=>{
     const cnt=caseList().filter(x=>x.clientId===c.id).length;
     const finalizedCnt=Object.keys(c.finalizedQuotations||{}).length;
+    const otBadge=c.isOneTime?'<span style="font-size:.58rem;color:#888;background:#f0f0f0;border:1px solid #d8d8d8;border-radius:8px;padding:1px 7px;margin-left:6px;vertical-align:middle">一次性</span>':'';
     return`<div class="client-card" onclick="openEditClient('${c.id}')">
-      <div class="client-card-name">${escHtml(c.name)}</div>
+      <div class="client-card-name">${escHtml(c.name)}${otBadge}</div>
       <div class="client-card-row"><b>聯絡人</b>${escHtml(c.contactName||'—')}</div>
       <div class="client-card-row"><b>Email</b>${escHtml(c.email||'—')}</div>
       <div class="client-card-row"><b>備註</b><span class="muted" style="font-size:.68rem">${escHtml(c.accountInfo||'—')}</span></div>
@@ -3278,7 +3283,16 @@ function renderClients(){
         <span class="muted" style="font-size:.7rem;margin-left:auto;align-self:center">${cnt} 筆案件</span>
       </div>
     </div>`;
-  }).join('');
+  };
+  // 分區：常態合作在前，「其他（一次性合作）」獨立一區
+  const regular=list.filter(c=>!c.isOneTime);
+  const oneTime=list.filter(c=>c.isOneTime);
+  const sec=(label,n)=>`<div style="grid-column:1/-1;font-size:.66rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.6px;padding:6px 2px 2px;border-bottom:1px solid #e8e8e8;display:flex;justify-content:space-between"><span>${label}</span><span>${n} 位</span></div>`;
+  let html='';
+  if(regular.length&&oneTime.length)html+=sec('合作客戶',regular.length);
+  html+=regular.map(cardHtml).join('');
+  if(oneTime.length)html+=sec('🗂 其他（一次性合作）',oneTime.length)+oneTime.map(cardHtml).join('');
+  grid.innerHTML=html;
 }
 function goToQuote(cid){S.selectedClientForQuote=cid;switchTab('quotations');}
 
@@ -3395,6 +3409,7 @@ function openAddClient(){
   ['cl-name','cl-contact','cl-phone','cl-company','cl-taxid','cl-email','cl-account','cl-invoice-prefix','cl-invoice-email'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
   const ss=document.getElementById('cl-share-studio');if(ss)ss.checked=true;
   const ir=document.getElementById('cl-issues-receipt');if(ir)ir.checked=false;
+  const ot=document.getElementById('cl-one-time');if(ot)ot.checked=false;
   openM('client-modal');
 }
 function openEditClient(id){
@@ -3413,6 +3428,7 @@ function openEditClient(id){
   const ie=document.getElementById('cl-invoice-email');if(ie)ie.value=c.invoiceEmail||'';
   const ss=document.getElementById('cl-share-studio');if(ss)ss.checked=c.defaultShareWithStudio!==false;
   const ir=document.getElementById('cl-issues-receipt');if(ir)ir.checked=!!c.issuesReceipt;
+  const ot=document.getElementById('cl-one-time');if(ot)ot.checked=!!c.isOneTime;
   openM('client-modal');
 }
 function saveClient(){
@@ -3432,6 +3448,7 @@ function saveClient(){
     invoiceEmail:(document.getElementById('cl-invoice-email')?.value||'').trim(),
     defaultShareWithStudio:document.getElementById('cl-share-studio')?.checked!==false,
     issuesReceipt:!!document.getElementById('cl-issues-receipt')?.checked,
+    isOneTime:!!document.getElementById('cl-one-time')?.checked,
     quotation:existing.quotation||{items:[],updatedAt:Date.now()},
   };
   saveClientObj(c);
@@ -3976,7 +3993,7 @@ function renderSidebarClientSubmenu(){
     sub.innerHTML='<div class="sb-sub-empty">尚無客戶</div>';
     return;
   }
-  sub.innerHTML=list.map(c=>{
+  const itemHtml=(c)=>{
     const cnt=Object.keys(c.finalizedQuotations||{}).length;
     const active=S.selectedClientForQuote===c.id?' active':'';
     const cntCls=cnt>0?' has-finalized':'';
@@ -3984,7 +4001,16 @@ function renderSidebarClientSubmenu(){
       <span class="name">${escHtml(c.name)}</span>
       <span class="cnt${cntCls}" title="已完成 ${cnt} 版">${cnt}</span>
     </div>`;
-  }).join('');
+  };
+  // 常態合作在前；一次性合作客戶收進「其他」小節
+  const regular=list.filter(c=>!c.isOneTime);
+  const oneTime=list.filter(c=>c.isOneTime);
+  let html=regular.map(itemHtml).join('');
+  if(oneTime.length){
+    html+=`<div style="padding:6px 18px 3px;font-size:.58rem;color:#888;letter-spacing:.5px;font-weight:700;border-top:1px dashed #e8e8e8;margin-top:4px">🗂 其他（一次性）</div>`;
+    html+=oneTime.map(itemHtml).join('');
+  }
+  sub.innerHTML=html;
 }
 function onSidebarClientClick(cid){
   S.selectedClientForQuote=cid;
