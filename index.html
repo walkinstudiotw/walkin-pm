@@ -1894,6 +1894,23 @@ select.form-select:focus{border-color:#666666}
   </div>
 </div>
 
+<!-- NEW QUOTE (free client) MODAL -->
+<div class="modal-overlay" id="new-quote-modal">
+  <div class="modal">
+    <div class="modal-title">💰 新增報價單</div>
+    <div class="form-group full">
+      <label class="form-label">客戶名稱 *</label>
+      <input class="form-input" id="nq-name" placeholder="輸入客戶名稱（可選既有客戶或直接輸入新名稱）" list="nq-name-suggest" onkeydown="if(event.key==='Enter')createQuoteForClient()">
+      <datalist id="nq-name-suggest"></datalist>
+      <div style="font-size:.64rem;color:#888;margin-top:4px;line-height:1.5">名稱與既有客戶相同 → 直接開啟該客戶的報價單；<br>找不到相同客戶 → 自動建立新客戶並歸入「🗂 其他」分類（其餘資料可之後再補）。</div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeM('new-quote-modal')">取消</button>
+      <button class="btn-primary" onclick="createQuoteForClient()">建立</button>
+    </div>
+  </div>
+</div>
+
 <!-- CASE/INVOICE NAME MISMATCH RESOLUTION MODAL -->
 <div class="modal-overlay" id="case-name-resolve-modal">
   <div class="modal">
@@ -2205,7 +2222,7 @@ const TAB_META={
   workitems:{ico:'🛠️',label:'工作項目庫',addBtn:{txt:'＋ 新增工作項目',fn:'openAddWorkItem'}},
   clients:{ico:'👥',label:'客戶',addBtn:{txt:'＋ 新增客戶',fn:'openAddClient'}},
   outsourcers:{ico:'🤝',label:'外包人員',addBtn:{txt:'＋ 新增外包人員',fn:'openAddOutsourcer'}},
-  quotations:{ico:'💰',label:'報價單',addBtn:null},
+  quotations:{ico:'💰',label:'報價單',addBtn:{txt:'＋ 新增報價單',fn:'openNewQuoteClientModal'}},
   invoices:{ico:'🧾',label:'Invoice',addBtn:null},
   cashflow:{ico:'💵',label:'金流',addBtn:null},
   forecast:{ico:'📈',label:'預估',addBtn:null},
@@ -4011,6 +4028,37 @@ function renderSidebarClientSubmenu(){
     html+=oneTime.map(itemHtml).join('');
   }
   sub.innerHTML=html;
+}
+// ── 新增報價單（可不帶既有客戶）──
+// 名稱吻合既有客戶 → 直接用；否則自動建立客戶並歸入「其他」
+function openNewQuoteClientModal(){
+  document.getElementById('nq-name').value='';
+  document.getElementById('nq-name-suggest').innerHTML=clientList().map(c=>`<option value="${escHtml(c.name)}">`).join('');
+  openM('new-quote-modal');
+  setTimeout(()=>document.getElementById('nq-name').focus(),50);
+}
+function createQuoteForClient(){
+  const name=document.getElementById('nq-name').value.trim();
+  if(!name){toast('請輸入客戶名稱',true);return;}
+  const existing=clientList().find(c=>(c.name||'').trim().toLowerCase()===name.toLowerCase());
+  let cid;
+  if(existing){
+    cid=existing.id;
+    toast(`使用既有客戶「${existing.name}」`);
+  }else{
+    cid=uid();
+    const c={id:cid,name,contactName:'',contactPhone:'',companyTitle:'',taxId:'',email:'',accountInfo:'',
+      invoicePrefix:'',invoiceEmail:'',defaultShareWithStudio:true,issuesReceipt:false,isOneTime:true,
+      quotation:{items:[],updatedAt:Date.now()}};
+    S.clients[cid]=c;  // optimistic — Firebase listener echo 會晚一步
+    saveClientObj(c);
+    renderSidebarClientSubmenu();
+    toast(`已建立客戶「${name}」並歸入「其他」分類`);
+  }
+  closeM('new-quote-modal');
+  S.selectedClientForQuote=cid;
+  S.quoteViewMode='editor';
+  switchTab('quotations');
 }
 function onSidebarClientClick(cid){
   S.selectedClientForQuote=cid;
