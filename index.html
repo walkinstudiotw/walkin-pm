@@ -4073,6 +4073,75 @@ function onSidebarClientClick(cid){
 }
 function selectClientForQuote(cid){S.selectedClientForQuote=cid;S.quoteViewMode='list';renderQuotations();}
 
+// ── 報價單 → Invoice 草稿 ──
+// 逐項搬進 invoice（加減項/Bundle 標記保留 → 沿用合併顯示）；
+// 類別優惠與專案總優惠轉為負數 line，讓 invoice 總額與報價單一致。
+function convertQuoteToInvoice(cid){
+  const c=S.clients[cid];if(!c){toast('客戶不存在',true);return;}
+  ensureQuotation(c);
+  const q=c.quotation;
+  if(!(q.items||[]).length){toast('報價單沒有項目，無法轉換',true);return;}
+  showConf('轉為 Invoice？',`將以「${c.name}」目前的報價內容建立一張新的 Invoice 草稿（報價單本身不會改變）。`,()=>{
+    const items=[];
+    groupItemsByCategory(q.items).forEach(([cat,its])=>{
+      its.forEach(it=>{
+        const w=it.workItemId?S.workItems[it.workItemId]:null;
+        const line={
+          itemId:uid(),
+          label:it.label||'',
+          serviceLabel:w?(w.label||''):(it.label||''),
+          category:cat,
+          defaultPrice:it.defaultPrice||0,
+          qty:it.qty==null?1:it.qty,
+          unit:it.unit||'',
+          sourceWorkItemId:it.workItemId||null,
+        };
+        if(it.isAddon){line.isAddon=true;line.sourceAddonId=it.addonId||null;}
+        if(it.bundleSourceId)line.bundleSourceId=it.bundleSourceId;
+        items.push(line);
+      });
+      const cd=q.categoryDiscounts?.[cat];
+      if(cd?.enabled&&cd.amount>0){
+        items.push({itemId:uid(),label:`類別優惠（${cat}）`,serviceLabel:'優惠',category:cat,defaultPrice:-cd.amount,qty:1,unit:''});
+      }
+    });
+    if(q.projectDiscount?.enabled&&q.projectDiscount.amount>0){
+      items.push({itemId:uid(),label:'專案總優惠',serviceLabel:'優惠',category:'優惠',defaultPrice:-q.projectDiscount.amount,qty:1,unit:''});
+    }
+    const prefix=c.invoicePrefix||(c.name?c.name.charAt(0):'INV');
+    const now=new Date();
+    const billingMonth=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const issuedAt=Date.now();
+    const due=new Date();due.setDate(due.getDate()+30);
+    const inv={
+      id:uid(),
+      invoiceNumber:nextInvoiceNumber(prefix,billingMonth),
+      clientId:cid,
+      billingMonth,
+      issuedAt,
+      issuedDate:`${now.getFullYear()}/${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')}`,
+      dueDate:`${due.getFullYear()}/${String(due.getMonth()+1).padStart(2,'0')}/${String(due.getDate()).padStart(2,'0')}`,
+      status:'draft',
+      items,
+      taxRate:c.issuesReceipt?5:0,
+      taxExempt:!!q.taxExempt,
+      discount:0,
+      serviceNotes:'',
+      terms:'',
+      showSignature:false,
+      createdAt:Date.now(),
+      updatedAt:Date.now(),
+      sourceCaseIds:[],
+      fromQuotation:true,
+    };
+    inv.total=calcInvoiceTotal(inv).total;
+    S.invoices[inv.id]=inv;  // optimistic — Firebase echo 會晚一步
+    saveInvoiceObj(inv);
+    toast(`已建立 Invoice ${inv.invoiceNumber}（草稿）`);
+    jumpToInvoice(inv.id);
+  });
+}
+
 // ── FINALIZE QUOTATION (snapshot to history) ──
 function getFinalizedSummary(c){
   const list=Object.values(c.finalizedQuotations||{});
@@ -4283,6 +4352,7 @@ function renderQuoteEditor(main,c){
       </div>
       <div style="display:flex;gap:6px">
         <button class="nav-btn" onclick="openCopyQuote()">📋 複製</button>
+        <button class="nav-btn" onclick="convertQuoteToInvoice('${c.id}')" title="以目前報價內容建立 Invoice 草稿" style="background:#fff4e6;border-color:#f0c878;color:#a86a00">🧾 轉為 Invoice</button>
         <button class="nav-btn primary" onclick="openAddQuoteItem()">＋ 項目</button>
         <button class="nav-btn" onclick="finalizeQuotation('${c.id}')" style="background:#e8f5ec;border-color:#7de89a;color:#1e6038;font-weight:700">💾 儲存為完成版</button>
       </div>
