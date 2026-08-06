@@ -6043,6 +6043,44 @@ function confirmCreateInvoice(){
   closeM('invoice-create-modal');
   createBlankInvoice(clientId,month,null,seedCases);
 }
+// 案件 → Invoice line items 的唯一產生器（手動帶入、月底結算共用）：
+// 基本價一行（case 金額 − 加減項總和）+ 每個加減項一行（isAddon，
+// 渲染時會併回主項小計顯示為 ▸ 子行）。單位從工作項目定義解析。
+function buildInvoiceItemsFromCase(cs,overrideWi){
+  const caseWi=cs.pricing?.quotationItemId?S.workItems[cs.pricing.quotationItemId]:null;
+  const effectiveWi=overrideWi||caseWi;
+  const caseAddons=(cs.pricing?.addons||[]).filter(a=>a.qty&&a.qty>0);
+  const addonSum=caseAddons.reduce((s,a)=>s+(a.amount||0)*a.qty,0);
+  const baseLinePrice=Math.max(0,(cs.pricing?.amount||0)-addonSum);
+  const out=[{
+    itemId:uid(),
+    sourceCaseId:cs.id,
+    sourceWorkItemId:effectiveWi?effectiveWi.id:null,
+    label:cs.title||'',
+    serviceLabel:effectiveWi?effectiveWi.label:'',  // 服務項目（從工作項目庫）
+    category:effectiveWi?(effectiveWi.category||cs.type||''):(cs.type||''),
+    defaultPrice:baseLinePrice,
+    qty:1,
+    unit:effectiveWi?(effectiveWi.unit||'集'):'集',
+  }];
+  caseAddons.forEach(a=>{
+    const addonDef=effectiveWi?(effectiveWi.addons||[]).find(x=>x.id===a.addonId):null;
+    out.push({
+      itemId:uid(),
+      sourceCaseId:cs.id,
+      sourceWorkItemId:effectiveWi?effectiveWi.id:null,
+      sourceAddonId:a.addonId,
+      label:a.label||'',
+      serviceLabel:effectiveWi?(effectiveWi.label||''):'',
+      category:effectiveWi?(effectiveWi.category||cs.type||''):(cs.type||''),
+      defaultPrice:a.amount||0,
+      qty:a.qty,
+      unit:addonDef?.unit||'',
+      isAddon:true,
+    });
+  });
+  return out;
+}
 function createBlankInvoice(clientId,billingMonth,prefixOverride,seedCases){
   const c=S.clients[clientId];
   if(!c){toast('客戶不存在',true);return;}
@@ -6065,45 +6103,7 @@ function createBlankInvoice(clientId,billingMonth,prefixOverride,seedCases){
     const wid=typeof seed==='string'?'':seed.workItemId;
     const cs=S.cases[csid];
     if(!cs)return;
-    const w=wid?S.workItems[wid]:null;
-    // Source of truth = case.pricing.amount. Subtract addon-sum to get the "service-only" base.
-    const caseAddons=(cs.pricing?.addons||[]).filter(a=>a.qty&&a.qty>0);
-    const addonSum=caseAddons.reduce((s,a)=>s+(a.amount||0)*a.qty,0);
-    const casePrice=cs.pricing?.amount||0;
-    const baseLinePrice=Math.max(0,casePrice-addonSum);
-    // Resolve service item from the case's own quotationItemId if the inv-create modal
-    // didn't explicitly pick a workItem (w == null)
-    const caseWi=cs.pricing?.quotationItemId?S.workItems[cs.pricing.quotationItemId]:null;
-    const effectiveWi=w||caseWi;
-    items.push({
-      itemId:uid(),
-      sourceCaseId:cs.id,
-      sourceWorkItemId:effectiveWi?effectiveWi.id:null,
-      label:cs.title||'',
-      serviceLabel:effectiveWi?effectiveWi.label:'',  // 服務項目（從工作項目庫）
-      category:effectiveWi?(effectiveWi.category||cs.type||''):(cs.type||''),
-      defaultPrice:baseLinePrice,
-      qty:1,
-      unit:effectiveWi?(effectiveWi.unit||'集'):'集',
-    });
-    // Bring in any addons saved on the case (qty>0) as separate Invoice line items.
-    // Case addons don't store unit — resolve from the work item's addon definition.
-    caseAddons.forEach(a=>{
-      const addonDef=effectiveWi?(effectiveWi.addons||[]).find(x=>x.id===a.addonId):null;
-      items.push({
-        itemId:uid(),
-        sourceCaseId:cs.id,
-        sourceWorkItemId:effectiveWi?effectiveWi.id:null,
-        sourceAddonId:a.addonId,
-        label:a.label||'',
-        serviceLabel:effectiveWi?(effectiveWi.label||''):'',
-        category:effectiveWi?(effectiveWi.category||cs.type||''):(cs.type||''),
-        defaultPrice:a.amount||0,
-        qty:a.qty,
-        unit:addonDef?.unit||'',
-        isAddon:true,
-      });
-    });
+    items.push(...buildInvoiceItemsFromCase(cs,wid?S.workItems[wid]:null));
     sourceCaseIds.push(cs.id);
   });
   const subtotal=items.reduce((s,i)=>s+(i.defaultPrice||0)*(i.qty||1),0);
@@ -6205,23 +6205,10 @@ function doGenerateMonthlyInvoices(month){
     const id=uid();
     const issuedAt=Date.now();
     const due=new Date();due.setDate(due.getDate()+30);
-    // Resolve each case's linked workItem so 服務項目 / 類別 / 單位 come through
-    // (matches createBlankInvoice + the Python /pm-month auto path)
-    const items=cases.map(cs=>{
-      const wid=cs.pricing?.quotationItemId||null;
-      const wi=wid?S.workItems[wid]:null;
-      return {
-        itemId:uid(),
-        sourceCaseId:cs.id,
-        sourceWorkItemId:wid,
-        label:cs.title||'',
-        serviceLabel:wi?(wi.label||''):'',
-        category:wi?(wi.category||cs.type||''):(cs.type||''),
-        defaultPrice:cs.pricing?.amount||0,
-        qty:1,
-        unit:wi?(wi.unit||'集'):'集',
-      };
-    });
+    // 與手動帶入完全相同的 line 產生器（基本價 + 加減項拆行）＋標題排序
+    const items=[];
+    cases.slice().sort((a,b)=>(a.title||'').localeCompare(b.title||'','zh-TW',{numeric:true}))
+      .forEach(cs=>items.push(...buildInvoiceItemsFromCase(cs)));
     const subtotal=items.reduce((s,i)=>s+i.defaultPrice*(i.qty||1),0);
     const defaultTaxRate=c.issuesReceipt?5:0;
     const inv={
@@ -6605,38 +6592,7 @@ function confirmAddCasesToInvoice(){
     if(!cs)return;
     const wiSel=document.querySelector(`.iac-case-wi[data-case-id="${csid}"]`);
     const wid=wiSel?.value||cs.pricing?.quotationItemId||'';
-    const w=wid?S.workItems[wid]:null;
-    const caseAddons=(cs.pricing?.addons||[]).filter(a=>a.qty&&a.qty>0);
-    const addonSum=caseAddons.reduce((s,a)=>s+(a.amount||0)*a.qty,0);
-    const casePrice=cs.pricing?.amount||0;
-    const baseLinePrice=Math.max(0,casePrice-addonSum);
-    inv.items.push({
-      itemId:uid(),
-      sourceCaseId:cs.id,
-      sourceWorkItemId:w?w.id:null,
-      label:cs.title||'',
-      serviceLabel:w?w.label:'',
-      category:w?(w.category||cs.type||''):(cs.type||''),
-      defaultPrice:baseLinePrice,
-      qty:1,
-      unit:w?(w.unit||'集'):'集',
-    });
-    caseAddons.forEach(a=>{
-      const addonDef=w?(w.addons||[]).find(x=>x.id===a.addonId):null;
-      inv.items.push({
-        itemId:uid(),
-        sourceCaseId:cs.id,
-        sourceWorkItemId:w?w.id:null,
-        sourceAddonId:a.addonId,
-        label:a.label||'',
-        serviceLabel:w?w.label:'',
-        category:w?(w.category||cs.type||''):(cs.type||''),
-        defaultPrice:a.amount||0,
-        qty:a.qty,
-        unit:addonDef?.unit||'',
-        isAddon:true,
-      });
-    });
+    inv.items.push(...buildInvoiceItemsFromCase(cs,wid?S.workItems[wid]:null));
     inv.sourceCaseIds.push(cs.id);
     // Mark source case + cascade children
     cs.invoiceId=inv.id;cs.updatedAt=Date.now();saveCaseObj(cs);
