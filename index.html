@@ -4073,15 +4073,17 @@ function onSidebarClientClick(cid){
 }
 function selectClientForQuote(cid){S.selectedClientForQuote=cid;S.quoteViewMode='list';renderQuotations();}
 
-// ── 報價單 → Invoice 草稿 ──
+// ── 已完成報價單 → Invoice 草稿 ──
 // 逐項搬進 invoice（加減項/Bundle 標記保留 → 沿用合併顯示）；
 // 類別優惠與專案總優惠轉為負數 line，讓 invoice 總額與報價單一致。
-function convertQuoteToInvoice(cid){
+function convertQuoteToInvoice(cid,snapshotId){
   const c=S.clients[cid];if(!c){toast('客戶不存在',true);return;}
-  ensureQuotation(c);
-  const q=c.quotation;
+  const snap=snapshotId?(c.finalizedQuotations||{})[snapshotId]:null;
+  if(snapshotId&&!snap){toast('找不到此完成版',true);return;}
+  const q=snap?snap.quotation:(ensureQuotation(c),c.quotation);
   if(!(q.items||[]).length){toast('報價單沒有項目，無法轉換',true);return;}
-  showConf('轉為 Invoice？',`將以「${c.name}」目前的報價內容建立一張新的 Invoice 草稿（報價單本身不會改變）。`,()=>{
+  const srcName=snap?`完成版「${snap.projectName||'未命名'}」`:'目前的報價內容';
+  showConf('轉為 Invoice？',`將以「${c.name}」的${srcName}建立一張新的 Invoice 草稿（報價單本身不會改變）。`,()=>{
     const items=[];
     groupItemsByCategory(q.items).forEach(([cat,its])=>{
       its.forEach(it=>{
@@ -4306,6 +4308,7 @@ function renderQuoteClientList(main,c){
               <div class="qfc-meta">${dtStr} · ${s.itemCount} 項 · 總額 $${fmtMoney(s.total||0)}</div>
             </div>
             <div class="qfc-actions" onclick="event.stopPropagation()">
+              <button class="act-btn" onclick="convertQuoteToInvoice('${c.id}','${s.snapshotId}')" title="以此完成版內容建立 Invoice 草稿" style="color:#a86a00">🧾</button>
               <button class="act-btn" onclick="restoreFinalizedSnapshot('${c.id}','${s.snapshotId}')" title="載入此版本至編輯區">↺</button>
               <button class="act-btn del" onclick="deleteFinalizedSnapshot('${c.id}','${s.snapshotId}')" title="刪除此版本">🗑️</button>
             </div>
@@ -4352,7 +4355,6 @@ function renderQuoteEditor(main,c){
       </div>
       <div style="display:flex;gap:6px">
         <button class="nav-btn" onclick="openCopyQuote()">📋 複製</button>
-        <button class="nav-btn" onclick="convertQuoteToInvoice('${c.id}')" title="以目前報價內容建立 Invoice 草稿" style="background:#fff4e6;border-color:#f0c878;color:#a86a00">🧾 轉為 Invoice</button>
         <button class="nav-btn primary" onclick="openAddQuoteItem()">＋ 項目</button>
         <button class="nav-btn" onclick="finalizeQuotation('${c.id}')" style="background:#e8f5ec;border-color:#7de89a;color:#1e6038;font-weight:700">💾 儲存為完成版</button>
       </div>
