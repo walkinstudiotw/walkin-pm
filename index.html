@@ -2553,6 +2553,16 @@ function renderCases(){
 }
 function toggleOutsource(id){
   const c=S.cases[id];if(!c)return;
+  // 取消外包時，若支出仍是外包級距自動帶入的金額 → 一併清掉（同案件表單邏輯）；
+  // 只在能明確對上級距金額時才清，手動填的成本不動
+  if(c.isOutsourced&&c.outsource){
+    const o=S.outsourcers[c.outsource.outsourcerId];
+    const tier=o?.pricingTiers?.find(t=>t.label===c.outsource.tierLabel);
+    if(tier){
+      const auto=(tier.amount||0)+(c.outsource.isRush?(o.rushFee||0):0);
+      if(auto>0&&(c.cost||0)===auto)c.cost=0;
+    }
+  }
   c.isOutsourced=!c.isOutsourced;c.updatedAt=Date.now();
   saveCaseObj(c);
 }
@@ -3126,6 +3136,12 @@ function onFOutsourcedChange(){
       '— 選擇外包人員 —');
     buildFOutsourceTierPicker();
     updateFOutsourceCost();
+  }else{
+    // 取消外包時，若「支出」仍是外包設定自動帶入的金額 → 一併清掉，
+    // 避免殘留成本在金流頁繼續被當專案成本扣除；手動填的成本（錄音室等）不動
+    const auto=fOutsourceFormCost();
+    const costEl=document.getElementById('f-cost');
+    if(auto>0&&(parseInt(costEl.value)||0)===auto){costEl.value='';toast('已一併清除外包支出');}
   }
 }
 function onFOutsourcerChange(){
@@ -3142,16 +3158,19 @@ function buildFOutsourceTierPicker(){
     ()=>{updateFOutsourceCost();},
     o?'— 選擇等級 —':'— 先選人員 —');
 }
+// 依表單目前的外包人員/級距/急件狀態計算成本（未選人員 → 0）
+function fOutsourceFormCost(){
+  const o=S.outsourcers[document.getElementById('f-outsourcer-id').value];
+  if(!o)return 0;
+  const tier=o.pricingTiers?.find(t=>t.label===document.getElementById('f-outsource-tier').value);
+  const rush=document.getElementById('f-outsource-rush').checked?(o.rushFee||0):0;
+  return (tier?(tier.amount||0):0)+rush;
+}
 function updateFOutsourceCost(){
   const oid=document.getElementById('f-outsourcer-id').value;
   const o=oid?S.outsourcers[oid]:null;
   if(!o){document.getElementById('f-outsource-cost-display').textContent='$0';return;}
-  const tierLabel=document.getElementById('f-outsource-tier').value;
-  const tier=o.pricingTiers?.find(t=>t.label===tierLabel);
-  const isRush=document.getElementById('f-outsource-rush').checked;
-  const base=tier?(tier.amount||0):0;
-  const rush=isRush?(o.rushFee||0):0;
-  const total=base+rush;
+  const total=fOutsourceFormCost();
   document.getElementById('f-outsource-cost-display').textContent='$'+fmtMoney(total);
   document.getElementById('f-cost').value=total;
   const fp=document.getElementById('f-outsource-filename-preview');
@@ -7731,7 +7750,7 @@ function renderCashflow(){
       <div class="sub">扣外包後 30%</div>
     </div>
     ${agg.cost>0?`<div class="cash-card" style="border-color:#e8aaaa;background:#fde8e8">
-      <div class="lbl" style="color:#c53030">📤 外包成本</div>
+      <div class="lbl" style="color:#c53030">📤 支出/外包成本</div>
       <div class="val" style="color:#c53030">$${fmtMoney(agg.cost)}</div>
       <div class="sub">已從淨額扣除</div>
     </div>`:''}
@@ -7821,7 +7840,7 @@ function renderCashInvoiceRow(inv){
     </div>
     <div class="cash-row-detail">
       <div class="cash-line cash-line-hdr">
-        <div>項目</div><div style="text-align:right">金額</div><div style="text-align:right">外包</div><div style="text-align:right">淨額</div><div style="text-align:right">齊</div><div style="text-align:right">巫</div><div style="text-align:right">工作室</div><div></div>
+        <div>項目</div><div style="text-align:right">金額</div><div style="text-align:right">支出/外包</div><div style="text-align:right">淨額</div><div style="text-align:right">齊</div><div style="text-align:right">巫</div><div style="text-align:right">工作室</div><div></div>
       </div>
       ${linesHtml}
       <div style="margin:8px 0;padding:8px 10px;background:#faf6ee;border:1px dashed #d8c8aa;border-radius:7px">
