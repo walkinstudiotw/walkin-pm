@@ -1594,6 +1594,17 @@ select.form-select:focus{border-color:#666666}
   </div>
 </div>
 
+<!-- OUTSOURCER CASES MODAL -->
+<div class="modal-overlay" id="os-cases-modal">
+  <div class="modal modal-lg">
+    <div class="modal-title">🤝 外包案件 · <span id="os-cases-name"></span></div>
+    <div id="os-cases-body" style="max-height:60vh;overflow-y:auto"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeM('os-cases-modal')">關閉</button>
+    </div>
+  </div>
+</div>
+
 <!-- COPY QUOTATION MODAL -->
 <div class="modal-overlay" id="copy-quote-modal">
   <div class="modal">
@@ -3352,10 +3363,48 @@ function renderOutsourcers(){
       <div class="client-card-row"><b>費率</b><span style="font-size:.66rem;color:#666">${tiersBrief||'未設定'}</span></div>
       ${o.rushFee?`<div class="client-card-row"><b>急件</b><span style="color:#a86a00;font-size:.66rem">${o.rushDays} 天內 +$${fmtMoney(o.rushFee)}</span></div>`:''}
       <div class="client-card-actions" onclick="event.stopPropagation()">
-        <span class="muted" style="font-size:.7rem;margin-left:auto;align-self:center">${useCount} 案件使用</span>
+        ${useCount
+          ?`<button class="act-btn" onclick="openOutsourcerCases('${o.id}')" style="margin-left:auto;font-size:.7rem;color:#1e6038">${useCount} 案件使用 →</button>`
+          :`<span class="muted" style="font-size:.7rem;margin-left:auto;align-self:center">0 案件使用</span>`}
       </div>
     </div>`;
   }).join('');
+}
+
+// 外包人員 → 相關案件列表（點卡片上的「N 案件使用」開啟）
+function openOutsourcerCases(id){
+  const o=S.outsourcers[id];if(!o)return;
+  const cases=Object.values(S.cases||{})
+    .filter(c=>c.isOutsourced&&c.outsource?.outsourcerId===id)
+    .sort((a,b)=>(b.dueDate||'').localeCompare(a.dueDate||''));
+  document.getElementById('os-cases-name').textContent=o.name||'';
+  const rows=cases.map(c=>{
+    const client=S.clients[c.clientId];
+    const cost=computeOutsourceCost(c);
+    const paid=!!c.outsource?.paidAt;
+    return `<div onclick="closeM('os-cases-modal');openEditCase('${c.id}')" style="display:grid;grid-template-columns:1fr 90px 70px 90px 70px;gap:8px;align-items:center;padding:8px 6px;border-bottom:1px solid #f0f0f0;cursor:pointer;font-size:.74rem" onmouseover="this.style.background='#fafaf5'" onmouseout="this.style.background=''">
+      <div style="min-width:0">
+        <div style="font-weight:600;color:#1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(c.title||'')}</div>
+        <div style="font-size:.64rem;color:#888">${escHtml(client?.name||'—')}</div>
+      </div>
+      <div style="color:#888;font-size:.68rem">${c.dueDate||'—'}</div>
+      <div style="font-size:.68rem">${STATUS_LABEL[c.status||'todo']||c.status}</div>
+      <div style="text-align:right;font-family:'JetBrains Mono',monospace;color:#c53030">${cost?'-$'+fmtMoney(cost):'—'}${c.outsource?.isRush?' <span title="急件" style="color:#a86a00">⚡</span>':''}</div>
+      <div style="text-align:right;font-size:.66rem;${paid?'color:#1e6038':'color:#c53030;font-weight:700'}">${paid?'已付':'未付'}</div>
+    </div>`;
+  }).join('');
+  const unpaid=cases.filter(c=>!c.outsource?.paidAt).reduce((s,c)=>s+computeOutsourceCost(c),0);
+  const total=cases.reduce((s,c)=>s+computeOutsourceCost(c),0);
+  document.getElementById('os-cases-body').innerHTML=cases.length
+    ?`<div style="display:grid;grid-template-columns:1fr 90px 70px 90px 70px;gap:8px;padding:4px 6px;font-size:.62rem;color:#888;font-weight:700;border-bottom:1px solid #e8e8e8">
+        <div>案件</div><div>交期</div><div>狀態</div><div style="text-align:right">外包費</div><div style="text-align:right">付款</div>
+      </div>${rows}
+      <div style="display:flex;justify-content:flex-end;gap:14px;padding:8px 6px;font-size:.7rem;font-weight:700">
+        <span style="color:#888">共 ${cases.length} 件 · 合計 $${fmtMoney(total)}</span>
+        ${unpaid?`<span style="color:#c53030">未付 $${fmtMoney(unpaid)}</span>`:'<span style="color:#1e6038">已全數付清</span>'}
+      </div>`
+    :'<div style="padding:20px;text-align:center;color:#888;font-size:.74rem">沒有相關案件</div>';
+  openM('os-cases-modal');
 }
 
 function openAddOutsourcer(){
