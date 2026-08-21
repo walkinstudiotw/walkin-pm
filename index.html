@@ -1340,6 +1340,7 @@ select.form-select:focus{border-color:#666666}
 
     <div class="case-save-banner" id="case-save-banner"></div>
     <div class="modal-btns">
+      <span id="case-last-edit" class="muted" style="font-size:.62rem;align-self:center;margin-right:auto"></span>
       <button class="btn-danger" id="case-del-btn" onclick="confirmDelCase()" style="display:none">刪除</button>
       <button class="btn-cancel" onclick="closeM('case-modal')">取消</button>
       <button class="btn-primary" onclick="saveCase()">儲存</button>
@@ -2097,7 +2098,7 @@ function seedDefaultClients(){
 
 function saveClientObj(c){
   if(!_fbReady)return;
-  _db.ref(`${ROOT}/clients/${c.id}`).set(c);
+  _db.ref(`${ROOT}/clients/${c.id}`).set(_stampBy(c));
 }
 function deleteClientObj(id){
   _db.ref(`${ROOT}/clients/${id}`).remove();
@@ -2105,7 +2106,7 @@ function deleteClientObj(id){
 function saveCaseObj(c){
   if(!_fbReady)return;
   // JSON round-trip strips undefined keys (Firebase rejects undefined values)
-  const clean=JSON.parse(JSON.stringify(c));
+  const clean=JSON.parse(JSON.stringify(_stampBy(c)));
   try{
     _db.ref(`${ROOT}/cases/${c.id}`).set(clean);
   }catch(e){
@@ -2119,7 +2120,7 @@ function deleteCaseObj(id){
 }
 function saveWorkItemObj(w){
   if(!_fbReady)return;
-  _db.ref(`${ROOT}/workItems/${w.id}`).set(w);
+  _db.ref(`${ROOT}/workItems/${w.id}`).set(_stampBy(w));
 }
 function deleteWorkItemObj(id){
   _db.ref(`${ROOT}/workItems/${id}`).remove();
@@ -2129,7 +2130,7 @@ function saveInvoiceObj(inv){
   if(!_fbReady)return;
   // Strip undefined keys — Firebase .set() throws on any undefined,
   // which silently kills the whole write (breaking sync-to-invoice etc)
-  const clean=JSON.parse(JSON.stringify(inv));
+  const clean=JSON.parse(JSON.stringify(_stampBy(inv)));
   try{
     _db.ref(`${ROOT}/invoices/${inv.id}`).set(clean);
   }catch(e){
@@ -2149,7 +2150,7 @@ function invoiceList(){
     return (b.issuedAt||0)-(a.issuedAt||0);
   });
 }
-function saveOutsourcerObj(o){if(!_fbReady)return;_db.ref(`${ROOT}/outsourcers/${o.id}`).set(JSON.parse(JSON.stringify(o)));}
+function saveOutsourcerObj(o){if(!_fbReady)return;_db.ref(`${ROOT}/outsourcers/${o.id}`).set(JSON.parse(JSON.stringify(_stampBy(o))));}
 function deleteOutsourcerObj(id){_db.ref(`${ROOT}/outsourcers/${id}`).remove();}
 function outsourcerList(){return Object.values(S.outsourcers||{}).sort((a,b)=>(a.name||'').localeCompare(b.name||'','zh-TW'));}
 function ensureOutsourcer(o){
@@ -2200,15 +2201,50 @@ function toast(msg,err=false){
   t._t=setTimeout(()=>t.classList.remove('show'),2600);
 }
 function openM(id){document.getElementById(id).classList.add('open');}
-function closeM(id){document.getElementById(id).classList.remove('open');}
+function closeM(id){document.getElementById(id).classList.remove('open');_flushPendingRender();}
 function showConf(title,msg,cb){
   document.getElementById('conf-title').textContent=title;
   document.getElementById('conf-msg').textContent=msg;
   document.getElementById('conf-ok').onclick=()=>{closeConf();cb();};
   document.getElementById('confirm-ov').classList.add('open');
 }
-function closeConf(){document.getElementById('confirm-ov').classList.remove('open');}
-document.querySelectorAll('.modal-overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');}));
+function closeConf(){document.getElementById('confirm-ov').classList.remove('open');_flushPendingRender();}
+document.querySelectorAll('.modal-overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el){el.classList.remove('open');_flushPendingRender();}}));
+
+// ── 多人共用 ─────────────────────────────────────────
+// (1) 重繪防護：其他成員儲存 → on('value') 觸發 renderCurrentTab 整頁重繪，
+//     會打斷本機開著的 modal / 進行中的 inline 輸入 → 延後，關 modal 或離開輸入框時補繪
+let _pendingRender=false;
+function _renderBlocked(){
+  if(document.querySelector('.modal-overlay.open'))return true;
+  const ae=document.activeElement;
+  return !!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)
+    &&ae.closest('#cases-tbody,#clients-grid,#wi-tbody,#inv-list,#inv-editor-wrap,#inv-preview-wrap,#cash-list,#cash-summary,#fc-list,#outsourcers-grid,#quote-main'));
+}
+function _flushPendingRender(){
+  if(_pendingRender&&!_renderBlocked()){_pendingRender=false;renderCurrentTab();}
+}
+document.addEventListener('focusout',()=>setTimeout(_flushPendingRender,60));
+// (2) 樂觀鎖：編輯 modal 開啟時記下該筆 updatedAt，儲存前發現遠端已更新 → 提示覆蓋或放棄
+let _editSnap=null; // {coll,id,ts}
+function markEditSnap(coll,id){_editSnap=id?{coll,id,ts:(S[coll]?.[id]?.updatedAt)||0}:null;}
+function guardEditConflict(coll,id,retry){
+  if(!id||!_editSnap||_editSnap.coll!==coll||_editSnap.id!==id)return false;
+  if(((S[coll]?.[id]?.updatedAt)||0)===_editSnap.ts)return false;
+  const by=(S[coll]?.[id]?.updatedBy||'').split('@')[0];
+  showConf('⚠️ 資料已被其他成員修改',
+    `你編輯期間，這筆資料已被${by?` ${by} `:'其他成員'}更新過。按「確認」以你的版本覆蓋對方的修改；按「取消」放棄儲存（關閉視窗重新開啟即可載入最新版本）。`,
+    ()=>{_editSnap=null;retry();});
+  return true;
+}
+// (3) 追溯：所有寫入蓋上目前登入者 email
+function _stampBy(obj){const e=_auth?.currentUser?.email;if(e)obj.updatedBy=e;return obj;}
+function lastEditText(obj){
+  if(!obj?.updatedAt)return'';
+  const d=new Date(obj.updatedAt);
+  const t=`${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  return`上次修改：${obj.updatedBy?obj.updatedBy.split('@')[0]+' · ':''}${t}`;
+}
 function fmDate(s){
   if(!s)return'';
   const d=new Date(s+'T00:00:00');
@@ -2278,6 +2314,8 @@ function switchTab(n){
   renderCurrentTab();
 }
 function renderCurrentTab(){
+  // 多人共用：modal 開著或 inline 輸入中 → 延後重繪（closeM / focusout 補繪）
+  if(_renderBlocked()){_pendingRender=true;return;}
   const a=document.querySelector('.sb-item.active[data-tab]');
   const n=a?a.dataset.tab:'cases';
   if(n==='cases')renderCases();
@@ -2653,6 +2691,8 @@ function delCase(id){
 // ── CASE MODAL ─────────────────────────────────────
 function openAddCase(){
   S.editCaseId=null;
+  markEditSnap('cases',null);
+  document.getElementById('case-last-edit').textContent='';
   document.getElementById('case-modal-title').textContent='新增案件';
   document.getElementById('case-del-btn').style.display='none';
   document.getElementById('ai-input').value='';
@@ -2701,6 +2741,8 @@ function openAddCase(){
 function openEditCase(id){
   const c=S.cases[id];if(!c)return;
   S.editCaseId=id;
+  markEditSnap('cases',id);
+  document.getElementById('case-last-edit').textContent=lastEditText(c);
   document.getElementById('case-modal-title').textContent='編輯案件';
   document.getElementById('case-del-btn').style.display='block';
   document.getElementById('ai-input').value='';
@@ -2777,6 +2819,8 @@ function openCopyCase(id){
   openEditCase(id);
   // Override to "new" mode
   S.editCaseId=null;
+  markEditSnap('cases',null);
+  document.getElementById('case-last-edit').textContent='';
   document.getElementById('case-modal-title').textContent='複製案件';
   document.getElementById('case-del-btn').style.display='none';
   // Mark title visibly so user knows it's a copy (they can edit before save)
@@ -3247,6 +3291,7 @@ function saveCase(){
   const title=document.getElementById('f-title').value.trim();
   if(!clientId){saveCaseError('請選擇客戶','fcli-trigger');return;}
   if(!title){saveCaseError('請填寫標題','f-title');return;}
+  if(S.editCaseId&&guardEditConflict('cases',S.editCaseId,saveCase))return;
   const quotationItemId=document.getElementById('f-quote-item').value||null;
   // 收款金額 field is the BASE — final pricing.amount = base + addonSum so downstream
   // invoice generation (which subtracts addons to derive the line price) still works
@@ -3422,6 +3467,7 @@ function openEditOutsourcer(id){
   const o=S.outsourcers[id];if(!o)return;
   ensureOutsourcer(o);
   S.editOutsourcerId=id;
+  markEditSnap('outsourcers',id);
   document.getElementById('outsourcer-modal-title').textContent='編輯外包人員';
   document.getElementById('os-del-btn').style.display='block';
   document.getElementById('os-name').value=o.name||'';
@@ -3455,6 +3501,7 @@ function removeOsTier(i){_osTiers.splice(i,1);if(!_osTiers.length)_osTiers.push(
 function saveOutsourcer(){
   const name=document.getElementById('os-name').value.trim();
   if(!name){toast('請填寫名稱',true);return;}
+  if(S.editOutsourcerId&&guardEditConflict('outsourcers',S.editOutsourcerId,saveOutsourcer))return;
   const tiers=_osTiers.filter(t=>t.label.trim()).map(t=>({label:t.label.trim(),amount:parseInt(t.amount)||0}));
   const o={
     id:S.editOutsourcerId||uid(),
@@ -3500,6 +3547,7 @@ function openAddClient(){
 function openEditClient(id){
   const c=S.clients[id];if(!c)return;
   S.editClientId=id;
+  markEditSnap('clients',id);
   document.getElementById('client-modal-title').textContent='編輯客戶';
   document.getElementById('cl-del-btn').style.display='block';
   document.getElementById('cl-name').value=c.name||'';
@@ -3519,6 +3567,7 @@ function openEditClient(id){
 function saveClient(){
   const name=document.getElementById('cl-name').value.trim();
   if(!name){toast('請填寫客戶名稱',true);return;}
+  if(S.editClientId&&guardEditConflict('clients',S.editClientId,saveClient))return;
   const id=S.editClientId||uid();
   const existing=S.clients[id]||{};
   const c={
@@ -3966,6 +4015,7 @@ function openEditWorkItem(id){
   const w=S.workItems[id];if(!w)return;
   ensureWorkItemDefaults(w);
   S.editWorkItemId=id;
+  markEditSnap('workItems',id);
   document.getElementById('wi-modal-title').textContent='編輯工作項目';
   document.getElementById('wim-del-btn').style.display='block';
   document.getElementById('wim-label').value=w.label||'';
@@ -3986,6 +4036,7 @@ function saveWorkItem(){
   const label=document.getElementById('wim-label').value.trim();
   if(!label){toast(_wimIsBundle?'請填寫 Bundle 名稱':'請填寫項目名稱',true);return;}
   if(_wimIsBundle&&_wimChildIds.size===0){toast('Bundle 至少要包含一個工作項目',true);return;}
+  if(S.editWorkItemId&&guardEditConflict('workItems',S.editWorkItemId,saveWorkItem))return;
   // Sub-items only for non-bundle (variants); addons supported for both
   // Keep sub-items if they have a label OR a non-zero price OR a unit (label-less sub-items
   // inherit the parent's label at display time — useful for "same name, different unit/price" variants)
@@ -6785,6 +6836,7 @@ function openEditInvoiceItem(idx){
     return openEditInvoiceItem(p);
   }
   _iiEditIdx=idx;
+  markEditSnap('invoices',inv.id);
   document.getElementById('ii-modal-title').textContent='✎ 編輯 Invoice 項目';
   // Fill the basic fields
   document.getElementById('ii-service').value=it.serviceLabel||'';
@@ -6989,6 +7041,7 @@ function toggleIiAddon(aid,checked){
 }
 function saveInvoiceItemFromModal(){
   const inv=S.invoices[S.selectedInvoiceId];if(!inv){closeM('invoice-item-modal');return;}
+  if(_iiEditIdx!=null&&guardEditConflict('invoices',inv.id,saveInvoiceItemFromModal))return;
   const service=document.getElementById('ii-service').value.trim();
   const label=document.getElementById('ii-label').value.trim();
   if(!service){toast('請輸入服務項目',true);return;}
@@ -7643,6 +7696,7 @@ function delInvExpense(invId,expId){
 function openCashItemEdit(invId,idx){
   const inv=S.invoices[invId];if(!inv)return;
   const it=inv.items?.[idx];if(!it)return;
+  markEditSnap('invoices',invId);
   document.getElementById('cit-inv-id').value=invId;
   document.getElementById('cit-item-idx').value=String(idx);
   // Build a helpful context line
@@ -7692,6 +7746,7 @@ function saveCashItemEdit(){
   const idx=parseInt(document.getElementById('cit-item-idx').value);
   const inv=S.invoices[invId];if(!inv){closeM('cash-item-edit-modal');return;}
   const it=inv.items?.[idx];if(!it){closeM('cash-item-edit-modal');return;}
+  if(guardEditConflict('invoices',invId,saveCashItemEdit))return;
   const labor=document.getElementById('cit-labor').value.trim();
   const costRaw=document.getElementById('cit-cost').value.trim();
   const share=document.getElementById('cit-share').value;
