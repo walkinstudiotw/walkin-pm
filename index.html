@@ -694,6 +694,28 @@ select.form-select:focus{border-color:#666666}
   /* client cards single column */
   .client-grid{grid-template-columns:1fr}
 }
+/* ── 案件分組 / 摘要列 / 封存 ── */
+.cases-summary{display:flex;gap:8px;align-items:center;padding:8px 14px 0;flex-wrap:wrap}
+.cs-chip{display:inline-flex;align-items:baseline;gap:6px;border:1px solid #d8d8d8;border-radius:8px;padding:4px 12px;background:#fff;cursor:pointer;font-family:inherit;font-size:.7rem;font-weight:700;color:#666}
+.cs-chip .n{font-family:'JetBrains Mono',monospace;font-size:.92rem}
+.cs-chip.over .n{color:#c53030}.cs-chip.week .n{color:#a86a00}.cs-chip.doing .n{color:#1e6038}
+.cs-chip.sel{border-color:#1e6038;background:#e8f5ec}
+tr.cf-ghead td{background:#f7f5ef;border-top:1px solid #e3e0d6;padding:6px 10px;cursor:pointer;user-select:none;font-size:.76rem}
+tr.cf-ghead:hover td{background:#f1eee4}
+tr.cf-ghead .g-arrow{display:inline-block;width:13px;color:#999;font-size:.65rem;transition:transform .15s}
+tr.cf-ghead.closed .g-arrow{transform:rotate(-90deg)}
+tr.cf-ghead .g-name{font-weight:900}
+tr.cf-ghead .g-stat{font-size:.68rem;color:#666;margin-left:9px}
+tr.cf-ghead .g-stat b.o{color:#c53030}tr.cf-ghead .g-stat b.d{color:#1e6038}
+tr.cf-ghead .g-sum{float:right;font-family:'JetBrains Mono',monospace;font-size:.7rem;color:#1e6038;font-weight:700}
+tr.cf-ghead.overdue-g td{background:#fde8e8;border-top-color:#e8aaaa}
+tr.cf-ghead.overdue-g .g-name{color:#c53030}
+.due-badge{display:inline-block;border-radius:7px;padding:0 6px;font-size:.6rem;font-weight:700;margin-top:2px}
+.due-badge.over{background:#fde8e8;color:#c53030}
+.due-badge.today{background:#c53030;color:#fff}
+.due-badge.soon{background:#fff4e6;color:#a86a00}
+tr.arch-row td{opacity:.55}
+tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;font-weight:900;font-size:.72rem;padding:6px 10px}
 </style>
 </head>
 <body>
@@ -770,6 +792,7 @@ select.form-select:focus{border-color:#666666}
     <button class="filter-pill" data-cf-status="done">已完成</button>
     <button class="filter-pill" data-cf-status="unbilled">未請款</button>
     <button class="filter-pill" data-cf-status="all">全部</button>
+    <button class="filter-pill" id="cf-arch-pill" onclick="toggleArchView()" style="display:none" title="已完成＋已請款＋交期超過 2 個月的案件自動收進封存；點擊展開檢視">🗄 封存</button>
     <div class="filter-sep"></div>
     <input type="hidden" id="cf-client" value="all">
     <div class="qi-master-picker" style="width:160px">
@@ -781,12 +804,18 @@ select.form-select:focus{border-color:#666666}
       <button type="button" class="qi-master-trigger" id="cf-month-trigger"><span class="qi-master-trigger-text">全部月份</span><span class="qi-master-trigger-arrow">▼</span></button>
     </div>
     <div class="filter-sep"></div>
-    <input class="filter-search" id="cf-search" placeholder="搜尋標題..." oninput="renderCases()">
+    <input type="hidden" id="cf-group" value="client">
+    <div class="qi-master-picker" style="width:118px">
+      <button type="button" class="qi-master-trigger" id="cf-group-trigger"><span class="qi-master-trigger-text">按客戶分組</span><span class="qi-master-trigger-arrow">▼</span></button>
+    </div>
+    <div class="filter-sep"></div>
+    <input class="filter-search" id="cf-search" placeholder="搜尋標題/客戶/備註...">
     <span class="spacer"></span>
     <span class="filter-label" id="cases-count"></span>
     <div class="filter-sep"></div>
     <button class="nav-btn" onclick="openBulkImport()" title="從 Excel / Google Sheets 大量貼上建立案件">📥 大量匯入</button>
   </div>
+  <div class="cases-summary" id="cases-summary"></div>
   <div class="scroll-body">
     <table class="tbl" id="cases-table">
       <thead><tr>
@@ -2006,7 +2035,7 @@ const S={
   invoiceFilter:{month:'all',client:'all',status:'all'},
   invoiceViewMode:'list',  // 'list' | 'editor'
   selectedInvoiceId:null,
-  cf:{status:'active',client:'all',month:'all',search:'',sortBy:'dueDate',sortDir:'asc'},
+  cf:{status:'active',client:'all',month:'all',search:'',sortBy:'dueDate',sortDir:'asc',groupBy:'client',quick:null,showArch:false},
   wiSearch:'',
   wiSelectedCategory:'all',          // 'all' | category name
   wiRenamingCategory:null,           // category being inline-renamed
@@ -2337,6 +2366,17 @@ document.querySelectorAll('.filter-pill[data-cf-status]').forEach(p=>p.addEventL
   renderCases();
 }));
 document.getElementById('cf-search').addEventListener('input',e=>{S.cf.search=e.target.value.toLowerCase();renderCases();});
+// 分組切換（不分組/按客戶/按月份）— localStorage 記住上次選擇
+(function(){
+  const labels={none:'不分組',client:'按客戶分組',month:'按月份分組'};
+  try{S.cf.groupBy=localStorage.getItem('walkin_pm_cf_group')||S.cf.groupBy;}catch(e){}
+  if(!labels[S.cf.groupBy])S.cf.groupBy='client';
+  document.getElementById('cf-group').value=S.cf.groupBy;
+  buildFlatPicker('cf-group','cf-group-trigger',
+    ()=>Object.entries(labels).map(([v,label])=>({v,label})),
+    (v)=>{S.cf.groupBy=v;try{localStorage.setItem('walkin_pm_cf_group',v);}catch(e){}renderCases();},
+    labels[S.cf.groupBy]);
+})();
 
 function refreshClientSelectors(){
   // cf-client filter is now a custom flat picker — wire it up
@@ -2438,8 +2478,20 @@ function unlinkCaseFromInvoiceUi(caseId){
     toast('已取消連結');
   });
 }
+// 封存：已完成＋已請款（或系統外已請款）＋交期超過 2 個月 → 主列表收起。
+// 純顯示邏輯（資料不動）；用 c.invoiceId 輕量判斷，不走 resolveCaseInvoice（避免 render 熱路徑的副作用）
+function isArchivedCase(c){
+  if((c.status||'todo')!=='done')return false;
+  const dn=dUntil(c.dueDate);
+  if(dn===null||dn>=-60)return false;
+  if(c.billedExternally)return true;
+  const inv=c.invoiceId?S.invoices?.[c.invoiceId]:null;
+  return !!inv&&inv.status!=='draft';
+}
+function caseIsOverdue(c){const dn=dUntil(c.dueDate);return dn!==null&&dn<0&&(c.status||'todo')!=='done';}
+function caseIsDueSoon(c){const dn=dUntil(c.dueDate);return dn!==null&&dn>=0&&dn<=7&&(c.status||'todo')!=='done';}
 function filteredCases(){
-  let arr=caseList();
+  let arr=caseList().filter(c=>!isArchivedCase(c));
   if(S.cf.status==='active')arr=arr.filter(c=>(c.status||'todo')!=='done');
   else if(S.cf.status==='unbilled'){
     // 未請款：主案件中，(a) 沒有真正被任何 invoice 引用，或
@@ -2457,7 +2509,10 @@ function filteredCases(){
   if(cl&&cl!=='all')arr=arr.filter(c=>c.clientId===cl);
   const mo=document.getElementById('cf-month').value;
   if(mo&&mo!=='all')arr=arr.filter(c=>c.dueDate&&c.dueDate.startsWith(mo));
-  if(S.cf.search)arr=arr.filter(c=>(c.title||'').toLowerCase().includes(S.cf.search));
+  if(S.cf.quick==='over')arr=arr.filter(caseIsOverdue);
+  else if(S.cf.quick==='week')arr=arr.filter(caseIsDueSoon);
+  if(S.cf.search)arr=arr.filter(c=>
+    ((c.title||'')+' '+clientName(c.clientId)+' '+(c.paymentNote||'')+' '+(c.notes||'')).toLowerCase().includes(S.cf.search));
   // Sort by current cf.sortBy + sortDir
   const dir=S.cf.sortDir==='desc'?-1:1;
   const by=S.cf.sortBy||'dueDate';
@@ -2496,14 +2551,117 @@ function renderCases(){
       if(arrow)arrow.textContent='';
     }
   });
-  if(!arr.length){tb.innerHTML='';empty.style.display='flex';return;}
+  // 摘要列（以未封存全體計，不受 pill/篩選影響）
+  const liveAll=caseList().filter(c=>!isArchivedCase(c));
+  const nOver=liveAll.filter(caseIsOverdue).length;
+  const nWeek=liveAll.filter(caseIsDueSoon).length;
+  const nAct=liveAll.filter(c=>(c.status||'todo')!=='done').length;
+  document.getElementById('cases-summary').innerHTML=
+    `<button class="cs-chip over${S.cf.quick==='over'?' sel':''}" onclick="cfQuick('over')"><span class="n">${nOver}</span>逾期</button>
+     <button class="cs-chip week${S.cf.quick==='week'?' sel':''}" onclick="cfQuick('week')"><span class="n">${nWeek}</span>本週到期</button>
+     <button class="cs-chip doing" onclick="cfQuick(null)" title="回到「進行中」預設檢視"><span class="n">${nAct}</span>進行中</button>`;
+  // 封存 pill（有封存案件才顯示）
+  const archAll=caseList().filter(isArchivedCase);
+  const archPill=document.getElementById('cf-arch-pill');
+  archPill.style.display=archAll.length?'':'none';
+  archPill.textContent=`🗄 封存 ${archAll.length}${S.cf.showArch?' ▲':' ▼'}`;
+  archPill.classList.toggle('active',S.cf.showArch);
+  // 附屬案件數一次預算（原本每列掃整表是 O(N²)）
+  const childCounts={};
+  Object.values(S.cases||{}).forEach(x=>{if(x.linkedToCaseId)childCounts[x.linkedToCaseId]=(childCounts[x.linkedToCaseId]||0)+1;});
+  if(!arr.length&&!(S.cf.showArch&&archAll.length)){
+    tb.innerHTML='';empty.style.display='flex';
+    const isDefault=S.cf.status==='active'&&!S.cf.search&&!S.cf.quick
+      &&document.getElementById('cf-client').value==='all'&&document.getElementById('cf-month').value==='all';
+    empty.querySelector('.empty-title').textContent=isDefault?'尚無案件':'沒有符合篩選的案件';
+    return;
+  }
   empty.style.display='none';
-  tb.innerHTML=arr.map(c=>{
+  let html='';
+  const grp=S.cf.groupBy||'none';
+  if(grp==='client'){
+    const byClient=new Map();
+    arr.forEach(c=>{const k=c.clientId||'_none';if(!byClient.has(k))byClient.set(k,[]);byClient.get(k).push(c);});
+    [...byClient.keys()].sort((a,b)=>clientName(a).localeCompare(clientName(b),'zh-TW')).forEach(k=>{
+      const items=byClient.get(k);
+      const over=items.filter(caseIsOverdue).length;
+      const act=items.filter(c=>(c.status||'todo')!=='done').length;
+      // 進行中合計不含附屬案件（其金額已含於主案件）
+      const sum=items.filter(c=>(c.status||'todo')!=='done'&&!c.linkedToCaseId).reduce((s,c)=>s+(c.pricing?.amount||0),0);
+      const gk='c:'+k,closed=_cfClosed.has(gk);
+      html+=`<tr class="cf-ghead${closed?' closed':''}" onclick="cfToggleGroup('${gk}')"><td colspan="11"><span class="g-arrow">▼</span><span class="g-name">${escHtml(clientName(k))}</span><span class="g-stat">進行中 <b class="d">${act}</b>${over?` · 逾期 <b class="o">${over}</b>`:''} · 共 ${items.length} 件</span>${sum?`<span class="g-sum">進行中合計 $${fmtMoney(sum)}</span>`:''}</td></tr>`;
+      if(!closed)html+=items.map(c=>caseRowHtml(c,childCounts,'')).join('');
+    });
+  }else if(grp==='month'){
+    const overdue=arr.filter(caseIsOverdue);
+    const overSet=new Set(overdue.map(c=>c.id));
+    const byM=new Map();
+    arr.filter(c=>!overSet.has(c.id)).forEach(c=>{
+      const k=c.dueDate?c.dueDate.slice(0,7):'nodate';
+      if(!byM.has(k))byM.set(k,[]);byM.get(k).push(c);
+    });
+    if(overdue.length){
+      const closed=_cfClosed.has('m:over');
+      html+=`<tr class="cf-ghead overdue-g${closed?' closed':''}" onclick="cfToggleGroup('m:over')"><td colspan="11"><span class="g-arrow">▼</span><span class="g-name">⚠️ 逾期</span><span class="g-stat"><b class="o">${overdue.length}</b> 件需要處理</span></td></tr>`;
+      if(!closed)html+=overdue.map(c=>caseRowHtml(c,childCounts,'')).join('');
+    }
+    const nd=new Date(),nowYm=`${nd.getFullYear()}-${String(nd.getMonth()+1).padStart(2,'0')}`;
+    [...byM.keys()].sort((a,b)=>a==='nodate'?1:b==='nodate'?-1:a.localeCompare(b)).forEach(m=>{
+      const items=byM.get(m);
+      const act=items.filter(c=>(c.status||'todo')!=='done').length;
+      const gk='m:'+m,closed=_cfClosed.has(gk);
+      html+=`<tr class="cf-ghead${closed?' closed':''}" onclick="cfToggleGroup('${gk}')"><td colspan="11"><span class="g-arrow">▼</span><span class="g-name">${m==='nodate'?'無交期':m.replace('-','/')}</span>${m===nowYm?'<span class="g-stat"><b class="d">本月</b></span>':''}<span class="g-stat">進行中 ${act} · 共 ${items.length} 件</span></td></tr>`;
+      if(!closed)html+=items.map(c=>caseRowHtml(c,childCounts,'')).join('');
+    });
+  }else{
+    html=arr.map(c=>caseRowHtml(c,childCounts,'')).join('');
+  }
+  // 封存區（展開時附在表尾，資料唯讀顯示、列功能照常）
+  if(S.cf.showArch&&archAll.length){
+    archAll.sort((a,b)=>(b.dueDate||'').localeCompare(a.dueDate||''));
+    html+=`<tr class="cf-archhead"><td colspan="11">🗄 已封存（已完成＋已請款＋交期超過 2 個月）— ${archAll.length} 件；資料完整保留，金流統計不受影響</td></tr>`;
+    html+=archAll.map(c=>caseRowHtml(c,childCounts,'arch-row')).join('');
+  }
+  tb.innerHTML=html;
+  // Wire up the per-row status pickers (one custom picker per row)
+  const rendered=S.cf.showArch?arr.concat(archAll):arr;
+  rendered.forEach(c=>{
+    const triggerId='case-status-'+c.id;
+    if(!document.getElementById(triggerId))return;
+    buildFlatPicker('case-status-input-'+c.id, triggerId,
+      ()=>STATUS_OPTIONS.map(o=>({v:o.v,label:o.label})),
+      (v)=>{
+        setCaseStatus(c.id,v);
+        const btn=document.getElementById(triggerId);
+        if(btn)btn.dataset.status=v;
+      },
+      STATUS_LABEL[c.status||'todo']
+    );
+  });
+}
+let _cfClosed=new Set();
+function cfToggleGroup(k){_cfClosed.has(k)?_cfClosed.delete(k):_cfClosed.add(k);renderCases();}
+function toggleArchView(){S.cf.showArch=!S.cf.showArch;renderCases();}
+function cfQuick(k){
+  if(!k){S.cf.quick=null;S.cf.status='active';
+    document.querySelectorAll('.filter-pill[data-cf-status]').forEach(x=>x.classList.toggle('active',x.dataset.cfStatus==='active'));}
+  else S.cf.quick=S.cf.quick===k?null:k;
+  renderCases();
+}
+// 單列 HTML（分組/平面/封存區共用）
+function caseRowHtml(c,childCounts,extraCls){
     const status=c.status||'todo';
     const dn=dUntil(c.dueDate);
     let dateCls='';
     if(dn!==null&&dn<0&&status!=='done')dateCls='date-soon';        // 已過期 → 淡紅
     else if(dn!==null&&dn<=7&&status!=='done')dateCls='date-warn';  // 7 天內到期 → 淡橘
+    let dueBadge='';
+    if(status!=='done'&&dn!==null){
+      if(dn<0)dueBadge=`<span class="due-badge over">逾 ${-dn} 天</span>`;
+      else if(dn===0)dueBadge=`<span class="due-badge today">今天</span>`;
+      else if(dn===1)dueBadge=`<span class="due-badge soon">明天</span>`;
+      else if(dn<=7)dueBadge=`<span class="due-badge soon">${dn} 天後</span>`;
+    }
     const amount=c.pricing?.amount;
     let amtStr;
     if(c.linkedToCaseId){
@@ -2514,17 +2672,17 @@ function renderCases(){
       amtStr=`<span class="amt included">${escHtml(c.pricing.includedIn)}</span>`;
     }else{
       // Editable inline amount (change flows to any linked invoice line)
-      const childCount=Object.values(S.cases).filter(x=>x.linkedToCaseId===c.id).length;
+      const childCount=childCounts[c.id]||0;
       const childBadge=childCount?`<span style="display:block;font-size:.6rem;color:#5a7a8a;margin-top:1px">+ ${childCount} 附屬</span>`:'';
       const invBadge=c.invoiceId?`<span class="case-amount-linked-badge" title="已在 Invoice ${escHtml(S.invoices[c.invoiceId]?.invoiceNumber||'')} — 改金額會同步">🧾 已連動</span>`:'';
       amtStr=`<input type="number" class="case-amount-input" value="${amount||0}" onchange="updateCaseAmount('${c.id}',this.value)" title="點擊修改金額；已在 Invoice 中會同步">${childBadge}${invBadge}`;
     }
-    return`<tr onclick="openEditCase('${c.id}')">
+    return`<tr class="${extraCls}" onclick="openEditCase('${c.id}')">
       <td><span class="ep-num">${escHtml(clientName(c.clientId))}</span></td>
       <td>${escHtml(c.title||'')}</td>
       <td><span class="type-pill">${escHtml(c.type||'')}</span></td>
       <td onclick="event.stopPropagation()">
-        <input type="date" class="case-date-input ${dateCls}" value="${escHtml(c.dueDate||'')}" onchange="updateCaseDate('${c.id}',this.value)" title="點擊修改交期">
+        <input type="date" class="case-date-input ${dateCls}" value="${escHtml(c.dueDate||'')}" onchange="updateCaseDate('${c.id}',this.value)" title="點擊修改交期">${dueBadge?`<div>${dueBadge}</div>`:''}
       </td>
       <td onclick="event.stopPropagation()">${amtStr}</td>
       <td class="muted">${escHtml(c.materialNote||'')}</td>
@@ -2584,21 +2742,6 @@ function renderCases(){
         <button class="act-btn del" onclick="delCase('${c.id}')" title="刪除">🗑️</button>
       </td>
     </tr>`;
-  }).join('');
-  // Wire up the per-row status pickers (one custom picker per row)
-  arr.forEach(c=>{
-    const triggerId='case-status-'+c.id;
-    if(!document.getElementById(triggerId))return;
-    buildFlatPicker('case-status-input-'+c.id, triggerId,
-      ()=>STATUS_OPTIONS.map(o=>({v:o.v,label:o.label})),
-      (v)=>{
-        setCaseStatus(c.id,v);
-        const btn=document.getElementById(triggerId);
-        if(btn)btn.dataset.status=v;
-      },
-      STATUS_LABEL[c.status||'todo']
-    );
-  });
 }
 function toggleOutsource(id){
   const c=S.cases[id];if(!c)return;
