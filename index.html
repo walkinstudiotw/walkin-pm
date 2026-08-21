@@ -2589,7 +2589,7 @@ function renderCases(){
       // 進行中合計不含附屬案件（其金額已含於主案件）
       const sum=items.filter(c=>(c.status||'todo')!=='done'&&!c.linkedToCaseId).reduce((s,c)=>s+(c.pricing?.amount||0),0);
       const gk='c:'+k,closed=_cfClosed.has(gk);
-      html+=`<tr class="cf-ghead${closed?' closed':''}" onclick="cfToggleGroup('${gk}')"><td colspan="11"><span class="g-arrow">▼</span><span class="g-name">${escHtml(clientName(k))}</span><span class="g-stat">進行中 <b class="d">${act}</b>${over?` · 逾期 <b class="o">${over}</b>`:''} · 共 ${items.length} 件</span>${sum?`<span class="g-sum">進行中合計 $${fmtMoney(sum)}</span>`:''}</td></tr>`;
+      html+=`<tr class="cf-ghead${closed?' closed':''}" onclick="cfToggleGroup('${gk}')"><td colspan="11"><span class="g-arrow">▼</span><span class="g-name" style="border-left:4px solid ${clientColor(k)};padding-left:8px">${escHtml(clientName(k))}</span><span class="g-stat">進行中 <b class="d">${act}</b>${over?` · 逾期 <b class="o">${over}</b>`:''} · 共 ${items.length} 件</span>${sum?`<span class="g-sum">進行中合計 $${fmtMoney(sum)}</span>`:''}</td></tr>`;
       if(!closed)html+=items.map(c=>caseRowHtml(c,childCounts,'')).join('');
     });
   }else if(grp==='month'){
@@ -2648,6 +2648,13 @@ function cfQuick(k){
   else S.cf.quick=S.cf.quick===k?null:k;
   renderCases();
 }
+// 節目色條：由 clientId 雜湊出穩定顏色（不動資料；同客戶永遠同色）
+const CLIENT_COLORS=['#4dd87a','#5a9ae0','#e0a44d','#c77dd8','#d8756a','#58c4c4','#8a9a4d','#e08aae','#7a86d8','#c4a458'];
+function clientColor(cid){
+  if(!cid)return '#d8d8d8';
+  let h=0;for(let i=0;i<cid.length;i++)h=(h*31+cid.charCodeAt(i))>>>0;
+  return CLIENT_COLORS[h%CLIENT_COLORS.length];
+}
 // 單列 HTML（分組/平面/封存區共用）
 function caseRowHtml(c,childCounts,extraCls){
     const status=c.status||'todo';
@@ -2678,7 +2685,7 @@ function caseRowHtml(c,childCounts,extraCls){
       amtStr=`<input type="number" class="case-amount-input" value="${amount||0}" onchange="updateCaseAmount('${c.id}',this.value)" title="點擊修改金額；已在 Invoice 中會同步">${childBadge}${invBadge}`;
     }
     return`<tr class="${extraCls}" onclick="openEditCase('${c.id}')">
-      <td><span class="ep-num">${escHtml(clientName(c.clientId))}</span></td>
+      <td style="border-left:4px solid ${clientColor(c.clientId)}"><span class="ep-num">${escHtml(clientName(c.clientId))}</span></td>
       <td>${escHtml(c.title||'')}</td>
       <td><span class="type-pill">${escHtml(c.type||'')}</span></td>
       <td onclick="event.stopPropagation()">
