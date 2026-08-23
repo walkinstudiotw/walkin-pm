@@ -13,6 +13,7 @@
 //
 // 收到的 payload：
 // { to, cc, subject, body, pdfBase64, filename }
+// pdfBase64 為選配 — 沒帶就寄純文字信（週一金流彙整信走這條）
 // ═════════════════════════════════════════════════════════════
 
 function doPost(e) {
@@ -21,20 +22,17 @@ function doPost(e) {
     const { to, cc, subject, body, pdfBase64, filename } = payload;
 
     if (!to) throw new Error('Missing "to" recipient');
-    if (!pdfBase64) throw new Error('Missing PDF data');
 
-    // Decode base64 PDF
-    const pdfBlob = Utilities.newBlob(
-      Utilities.base64Decode(pdfBase64),
-      'application/pdf',
-      filename || 'Invoice.pdf'
-    );
+    const opts = { cc: cc || '', name: 'WalkIn Studio' };
+    if (pdfBase64) {
+      opts.attachments = [Utilities.newBlob(
+        Utilities.base64Decode(pdfBase64),
+        'application/pdf',
+        filename || 'Invoice.pdf'
+      )];
+    }
 
-    GmailApp.sendEmail(to, subject || 'Invoice', body || '', {
-      cc: cc || '',
-      attachments: [pdfBlob],
-      name: 'WalkIn Studio'
-    });
+    GmailApp.sendEmail(to, subject || 'WalkIn Studio', body || '', opts);
 
     return ContentService
       .createTextOutput(JSON.stringify({ ok: true, sentAt: new Date().toISOString() }))
