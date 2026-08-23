@@ -19,11 +19,12 @@
 function doPost(e) {
   try {
     const payload = JSON.parse(e.postData.contents);
-    const { to, cc, subject, body, pdfBase64, filename } = payload;
+    const { to, cc, subject, body, html, pdfBase64, filename } = payload;
 
     if (!to) throw new Error('Missing "to" recipient');
 
     const opts = { cc: cc || '', name: 'WalkIn Studio' };
+    if (html) opts.htmlBody = html;  // 有 html 就寄 HTML 信（body 作為純文字 fallback）
     if (pdfBase64) {
       opts.attachments = [Utilities.newBlob(
         Utilities.base64Decode(pdfBase64),
