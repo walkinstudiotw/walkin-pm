@@ -17,7 +17,7 @@
   --green:#1e6038; --green-soft:#e8f5ec; --green-line:#7de89a;
   --amber:#a86a00; --amber-soft:#fff4e6; --amber-line:#f0c878;
   --red:#c53030; --red-soft:#fde8e8; --red-line:#e8aaaa;
-  --shadow-card:0 2px 10px rgba(60,50,30,.06);
+  --shadow-card:0 3px 14px rgba(60,50,30,.10);
   --shadow-pop:0 8px 30px rgba(40,30,10,.18);
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -333,7 +333,7 @@ body{display:flex;flex-direction:column}
 .inv-status.sent{background:#e8f0fc;color:#1e4a80;border:1px solid #5a9ae0}
 .inv-status.paid{background:#e8f5ec;color:#1e6038;border:1px solid #7de89a}
 .inv-list-empty{padding:48px 18px;text-align:center;color:#666;font-size:.85rem}
-.inv-meta-card{background:#fbfaf6;border:1px solid #e3e0d6;border-radius:10px;padding:12px 14px;display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.inv-meta-card{background:#fbfaf6;border:1px solid #e3e0d6;border-radius:12px;padding:12px 14px;display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;box-shadow:var(--shadow-card)}
 .inv-meta-card .form-group.full{grid-column:1/-1}
 .inv-meta-card .form-input,.inv-meta-card .form-textarea,.inv-meta-card .form-select{font-size:.78rem;padding:5px 8px}
 .inv-back-btn{background:none;border:1px solid #e3e0d6;color:#666666;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:.7rem;font-family:inherit;margin-bottom:8px}
@@ -368,7 +368,7 @@ body{display:flex;flex-direction:column}
 .quote-card .q-cat{color:#888;font-size:.7rem}
 .quote-card .q-price{font-family:'JetBrains Mono',monospace;color:#1e6038;text-align:right}
 .quote-empty{padding:36px 18px;text-align:center;color:#555;font-size:.85rem;border:1px dashed #e3e0d6;border-radius:10px}
-.quote-meta-card{background:#fbfaf6;border:1px solid #e3e0d6;border-radius:10px;padding:12px 14px;display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:6px}
+.quote-meta-card{background:#fbfaf6;border:1px solid #e3e0d6;border-radius:12px;padding:12px 14px;display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:6px;box-shadow:var(--shadow-card)}
 .quote-meta-card .form-group.full{grid-column:1/-1}
 .quote-meta-card .form-input,.quote-meta-card .form-textarea,.quote-meta-card .form-select{font-size:.78rem;padding:5px 8px}
 .quote-meta-card .form-textarea{min-height:50px}
@@ -416,7 +416,7 @@ body{display:flex;flex-direction:column}
 .confirm-msg{font-size:.78rem;color:#444444;line-height:1.5}
 
 /* CLIENT MODAL SECTIONS */
-.cl-section{padding:10px 12px;background:#fbfaf6;border:1px solid #efece3;border-radius:8px;display:flex;flex-direction:column;gap:8px}
+.cl-section{padding:10px 12px;background:#fbfaf6;border:1px solid #efece3;border-radius:10px;display:flex;flex-direction:column;gap:8px;box-shadow:var(--shadow-card)}
 .cl-section-title{font-size:.65rem;color:#1e4a80;font-weight:700;letter-spacing:.6px;text-transform:uppercase;padding-bottom:5px;border-bottom:1px dashed #dde6f5}
 
 /* WORKITEM BUNDLE — children picker + table badge */
@@ -995,6 +995,8 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
   <div class="scroll-body">
     <!-- Summary cards -->
     <div class="cash-summary" id="cash-summary"></div>
+    <!-- 入帳時程（跨月應收帳款，按預計入帳日） -->
+    <div id="cash-ar"></div>
     <!-- Invoice list with expand-to-view-split -->
     <div id="cash-list" class="cash-list"></div>
     <div id="cash-empty" class="empty-state" style="display:none">
@@ -1269,7 +1271,7 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
     <div class="form-row-3">
       <div class="form-group">
         <label class="form-label">交期</label>
-        <input class="form-input" id="f-due" type="date">
+        <input class="form-input" id="f-due" type="date" onchange="updateFShareVisibility()">
       </div>
       <div class="form-group">
         <label class="form-label">負責勞務</label>
@@ -1363,8 +1365,8 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
       <div id="f-outsource-filename-preview" style="display:none;margin-top:8px;padding:6px 10px;background:#fbfaf6;border:1px dashed #e3e0d6;border-radius:6px;font-size:.66rem;color:#666;font-family:'JetBrains Mono',monospace"></div>
     </div>
 
-    <!-- 分潤設定 — 是否與工作室分潤 -->
-    <div class="form-group full" style="background:#fff8ee;border:1px solid #f0d8a0;border-radius:8px;padding:10px 12px">
+    <!-- 分潤設定 — 是否與工作室分潤（2026-10 公司化後的新案件自動隱藏） -->
+    <div class="form-group full" id="f-share-section" style="background:#fff8ee;border:1px solid #f0d8a0;border-radius:8px;padding:10px 12px">
       <label class="form-label" style="color:#a86a00;margin-bottom:6px">💸 分潤設定</label>
       <div style="display:flex;gap:14px;font-size:.78rem;align-items:center;flex-wrap:wrap">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
@@ -1400,6 +1402,17 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
         <div class="form-group">
           <label class="form-label">Email</label>
           <input class="form-input" id="cl-email" type="email" placeholder="example@gmail.com">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group full">
+          <label class="form-label">節目顏色（案件列表色條）</label>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="color" id="cl-color" value="#4dd87a" style="width:44px;height:28px;border:1px solid var(--line);border-radius:6px;background:var(--field);padding:2px;cursor:pointer" onchange="document.getElementById('cl-color-auto').value='0';updateClColorHint()">
+            <input type="hidden" id="cl-color-auto" value="1">
+            <button type="button" class="nav-btn" style="font-size:.68rem" onclick="clResetColor()">↺ 自動配色</button>
+            <span class="muted" style="font-size:.64rem" id="cl-color-hint"></span>
+          </div>
         </div>
       </div>
     </div>
@@ -1632,6 +1645,23 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
   </div>
 </div>
 
+<!-- 入帳確認 MODAL（公司制 — 必填實際入帳日期） -->
+<div class="modal-overlay" id="inv-pay-modal">
+  <div class="modal" style="width:360px">
+    <div class="modal-title">💰 確認入帳</div>
+    <div id="ipay-info" style="font-size:.8rem;color:#666;line-height:1.6"></div>
+    <div class="form-group">
+      <label class="form-label">實際入帳日期（必填）</label>
+      <input class="form-input" type="date" id="ipay-date" style="font-family:'JetBrains Mono',monospace">
+      <div id="ipay-err" style="font-size:.66rem;color:#c53030;min-height:15px"></div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeM('inv-pay-modal')">取消</button>
+      <button class="btn-primary" onclick="confirmInvPay()">確認入帳</button>
+    </div>
+  </div>
+</div>
+
 <!-- OUTSOURCER CASES MODAL -->
 <div class="modal-overlay" id="os-cases-modal">
   <div class="modal modal-lg">
@@ -1744,6 +1774,20 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
         在 Apps Script 部署 Web App 後貼入網址（部署 → 新增部署 → Web 應用程式 → 任何人）。<br>
         Apps Script 程式碼樣本：<b>pm_manager_appscript.gs</b>（與此 HTML 同目錄）
       </div>
+    </div>
+    <div class="form-group full" style="background:var(--green-soft);border:1px solid var(--green-line);border-radius:10px;padding:10px 12px">
+      <label class="form-label" style="color:var(--green)">🏢 公司制薪資（2026/10 起生效）</label>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">齊 · 每月薪資</label>
+          <input class="form-input" id="set-salary-qi" type="number" placeholder="55000" inputmode="numeric">
+        </div>
+        <div class="form-group">
+          <label class="form-label">巫 · 每月薪資</label>
+          <input class="form-input" id="set-salary-wu" type="number" placeholder="55000" inputmode="numeric">
+        </div>
+      </div>
+      <div style="font-size:.62rem;color:#666;margin-top:3px">金流頁 2026/10 起的月份會自動帶出薪資支出，可逐月標記已發/未發並計入月損益</div>
     </div>
 
     <div class="form-group full">
@@ -2044,6 +2088,7 @@ const S={
   invoiceViewMode:'list',  // 'list' | 'editor'
   selectedInvoiceId:null,
   cf:{status:'active',client:'all',month:'all',search:'',sortBy:'dueDate',sortDir:'asc',groupBy:'client',quick:null,showArch:false},
+  salaryPayments:{},
   wiSearch:'',
   wiSelectedCategory:'all',          // 'all' | category name
   wiRenamingCategory:null,           // category being inline-renamed
@@ -2107,6 +2152,11 @@ function initFirebase(){
   });
   _db.ref(`${ROOT}/outsourcers`).on('value',snap=>{
     S.outsourcers=snap.val()||{};
+    renderCurrentTab();
+  });
+  // 公司制（2026-10 起）：每月發薪紀錄 {month:{qi/wu:{paid,date,amount,updatedBy}}}
+  _db.ref(`${ROOT}/salaryPayments`).on('value',snap=>{
+    S.salaryPayments=snap.val()||{};
     renderCurrentTab();
   });
   _db.ref(`${ROOT}/settings`).on('value',snap=>{
@@ -2656,12 +2706,22 @@ function cfQuick(k){
   else S.cf.quick=S.cf.quick===k?null:k;
   renderCases();
 }
-// 節目色條：由 clientId 雜湊出穩定顏色（不動資料；同客戶永遠同色）
+// 節目色條：客戶自訂顏色優先，否則由 clientId 雜湊自動配色（同客戶永遠同色）
 const CLIENT_COLORS=['#4dd87a','#5a9ae0','#e0a44d','#c77dd8','#d8756a','#58c4c4','#8a9a4d','#e08aae','#7a86d8','#c4a458'];
-function clientColor(cid){
+function clientAutoColor(cid){
   if(!cid)return '#e3e0d6';
   let h=0;for(let i=0;i<cid.length;i++)h=(h*31+cid.charCodeAt(i))>>>0;
   return CLIENT_COLORS[h%CLIENT_COLORS.length];
+}
+function clientColor(cid){return S.clients?.[cid]?.color||clientAutoColor(cid);}
+function clResetColor(){
+  document.getElementById('cl-color-auto').value='1';
+  document.getElementById('cl-color').value=S.editClientId?clientAutoColor(S.editClientId):'#4dd87a';
+  updateClColorHint();
+}
+function updateClColorHint(){
+  const el=document.getElementById('cl-color-hint');
+  if(el)el.textContent=document.getElementById('cl-color-auto').value==='1'?'目前：自動配色':'目前：自訂顏色';
 }
 // 單列 HTML（分組/平面/封存區共用）
 function caseRowHtml(c,childCounts,extraCls){
@@ -2894,7 +2954,14 @@ function openAddCase(){
   document.getElementById('f-billed-external').checked=false;
   refreshLinkedToOptions();
   onBillingModeChange();
+  updateFShareVisibility();
   openM('case-modal');
+}
+// 公司化（2026-10 起）：交期落在公司制月份的案件收入全歸公司，不再分潤 → 隱藏分潤設定
+function updateFShareVisibility(){
+  const due=document.getElementById('f-due').value||'';
+  const sec=document.getElementById('f-share-section');
+  if(sec)sec.style.display=isCompanyMonth(due.slice(0,7))?'none':'';
 }
 function openEditCase(id){
   const c=S.cases[id];if(!c)return;
@@ -2967,6 +3034,7 @@ function openEditCase(id){
   document.getElementById('f-linked-to').value=isLinked?c.linkedToCaseId:'';
   refreshLinkedToOptions();
   onBillingModeChange();
+  updateFShareVisibility();
   openM('case-modal');
 }
 // Copy a case → open modal as 新增 with all fields pre-filled from source.
@@ -3523,7 +3591,7 @@ function renderClients(){
     const cnt=caseList().filter(x=>x.clientId===c.id).length;
     const finalizedCnt=Object.keys(c.finalizedQuotations||{}).length;
     const otBadge=c.isOneTime?'<span style="font-size:.58rem;color:#888;background:#f1eee6;border:1px solid #e3e0d6;border-radius:8px;padding:1px 7px;margin-left:6px;vertical-align:middle">其他</span>':'';
-    return`<div class="client-card" onclick="openEditClient('${c.id}')">
+    return`<div class="client-card" style="border-left:4px solid ${clientColor(c.id)}" onclick="openEditClient('${c.id}')">
       <div class="client-card-name">${escHtml(c.name)}${otBadge}</div>
       <div class="client-card-row"><b>聯絡人</b>${escHtml(c.contactName||'—')}</div>
       <div class="client-card-row"><b>Email</b>${escHtml(c.email||'—')}</div>
@@ -3700,6 +3768,9 @@ function openAddClient(){
   const ss=document.getElementById('cl-share-studio');if(ss)ss.checked=true;
   const ir=document.getElementById('cl-issues-receipt');if(ir)ir.checked=false;
   const ot=document.getElementById('cl-one-time');if(ot)ot.checked=false;
+  document.getElementById('cl-color').value='#4dd87a';
+  document.getElementById('cl-color-auto').value='1';
+  updateClColorHint();
   openM('client-modal');
 }
 function openEditClient(id){
@@ -3720,6 +3791,9 @@ function openEditClient(id){
   const ss=document.getElementById('cl-share-studio');if(ss)ss.checked=c.defaultShareWithStudio!==false;
   const ir=document.getElementById('cl-issues-receipt');if(ir)ir.checked=!!c.issuesReceipt;
   const ot=document.getElementById('cl-one-time');if(ot)ot.checked=!!c.isOneTime;
+  document.getElementById('cl-color').value=c.color||clientAutoColor(id);
+  document.getElementById('cl-color-auto').value=c.color?'0':'1';
+  updateClColorHint();
   openM('client-modal');
 }
 function saveClient(){
@@ -3741,7 +3815,11 @@ function saveClient(){
     defaultShareWithStudio:document.getElementById('cl-share-studio')?.checked!==false,
     issuesReceipt:!!document.getElementById('cl-issues-receipt')?.checked,
     isOneTime:!!document.getElementById('cl-one-time')?.checked,
+    // 自訂節目顏色；「自動配色」存 null（Firebase set 時會移除該欄位）
+    color:document.getElementById('cl-color-auto').value==='1'?null:document.getElementById('cl-color').value,
     quotation:existing.quotation||{items:[],updatedAt:Date.now()},
+    // 完成版快照必須保留 — saveClientObj 是整包覆蓋，漏掉會把歷史快照全部清掉
+    finalizedQuotations:existing.finalizedQuotations||null,
   };
   saveClientObj(c);
   closeM('client-modal');
@@ -5402,6 +5480,9 @@ function openSettings(){
   document.getElementById('set-co-payment').value=co.paymentInfo??'';
   const wh=document.getElementById('set-webhook-url');
   if(wh)wh.value=S.globalSettings?.appsScriptWebhookUrl??'';
+  const sal=S.globalSettings?.salaries||{};
+  document.getElementById('set-salary-qi').value=sal.qi?.amount||'';
+  document.getElementById('set-salary-wu').value=sal.wu?.amount||'';
   refreshLogoPreview();
   refreshStampPreviews();
   openM('settings-modal');
@@ -5502,9 +5583,14 @@ function saveSettings(){
     paymentInfo:document.getElementById('set-co-payment').value.trim(),
   };
   const webhookUrl=document.getElementById('set-webhook-url')?.value?.trim()||'';
+  const salaries={
+    qi:{name:'齊',amount:parseInt(document.getElementById('set-salary-qi').value)||0},
+    wu:{name:'巫',amount:parseInt(document.getElementById('set-salary-wu').value)||0},
+  };
   Promise.all([
     _db.ref(`${ROOT}/settings/company`).set(company),
     _db.ref(`${ROOT}/settings/appsScriptWebhookUrl`).set(webhookUrl),
+    _db.ref(`${ROOT}/settings/salaries`).set(salaries),
   ]).then(()=>{
     closeM('settings-modal');toast('設定已儲存');
   }).catch(()=>{
@@ -7957,6 +8043,268 @@ function computeMonthlyAgg(invs){
   });
   return a;
 }
+// ═══════════════════════════════════════════════════
+// ── 公司制（2026-10 起）──────────────────────────────
+// 依 billingMonth 自動分流：≥ 2026-10 → 公司出入帳檢視（收入全數
+// 入公司帳、齊/巫為薪資支出、不再分潤）；以前 → 現行分潤檢視，
+// 歷史數字完全不重算。computeInvoiceSplit 保留給歷史月份。
+// ═══════════════════════════════════════════════════
+const COMPANY_ERA='2026-10';
+function isCompanyMonth(m){return !!m&&m>=COMPANY_ERA;}
+function salaryConfig(){
+  const s=S.globalSettings?.salaries||{};
+  return [
+    {key:'qi',name:s.qi?.name||'齊',amount:s.qi?.amount||0},
+    {key:'wu',name:s.wu?.name||'巫',amount:s.wu?.amount||0},
+  ];
+}
+function monthSalary(m){
+  const pays=S.salaryPayments?.[m]||{};
+  // 已發過的以發薪當下快照金額為準（之後改設定不影響歷史）
+  return salaryConfig().map(cfg=>{
+    const pay=pays[cfg.key]||null;
+    return {key:cfg.key,name:cfg.name,amount:(pay&&pay.paid&&pay.amount!=null)?pay.amount:cfg.amount,pay};
+  });
+}
+function toggleSalaryPaid(month,key,checked){
+  if(!_fbReady)return;
+  if(checked){
+    const cfg=salaryConfig().find(c=>c.key===key);
+    const d=new Date();
+    const obj={paid:true,amount:cfg?.amount||0,
+      date:`${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`};
+    _db.ref(`${ROOT}/salaryPayments/${month}/${key}`).set(_stampBy(obj));
+  }else{
+    _db.ref(`${ROOT}/salaryPayments/${month}/${key}`).remove();
+  }
+  toast(checked?'已標記發薪':'已取消發薪標記');
+}
+function updateSalaryPayDate(month,key,val){
+  if(!_fbReady)return;
+  _db.ref(`${ROOT}/salaryPayments/${month}/${key}/date`).set(val?val.replace(/-/g,'/'):'');
+}
+// 公司制單張 invoice 計算：加減項合併同分潤制；
+// 免稅優惠 → 稅內含扣除；開發票客戶 → 稅外加不扣；淨額 = 收款 − 稅 − 外包 − 專案支出
+function computeInvoiceCompany(inv){
+  const items=inv.items||[];
+  const taxable=!!inv.taxExempt;
+  const lines=[];const totals={sub:0,tax:0,cost:0,net:0,expenses:0};
+  let i=0;
+  while(i<items.length){
+    const it=items[i];
+    let sub=(it.defaultPrice||0)*(it.qty==null?1:(it.qty||0));
+    let j=i+1;let addonCount=0;
+    if(!it.isAddon){
+      while(j<items.length&&items[j].isAddon){
+        const a=items[j];sub+=(a.defaultPrice||0)*(a.qty==null?1:(a.qty||0));addonCount++;j++;
+      }
+    }
+    const cs=it.sourceCaseId?S.cases[it.sourceCaseId]:null;
+    const cost=(it.cost!=null)?(parseInt(it.cost)||0):(cs?(cs.isOutsourced?computeOutsourceCost(cs):(cs.cost||0)):0);
+    const tax=(taxable&&sub>0)?Math.round(sub-sub/1.05):0;
+    lines.push({it,itemIdx:i,addonCount,cs,sub,tax,cost,net:sub-tax-cost});
+    totals.sub+=sub;totals.tax+=tax;totals.cost+=cost;totals.net+=sub-tax-cost;
+    i=j>i+1?j:i+1;
+  }
+  totals.expenses=(inv.expenses||[]).reduce((s,e)=>s+(parseInt(e.amount)||0),0);
+  totals.net-=totals.expenses;
+  return {lines,totals};
+}
+// ── 入帳確認（必填實際入帳日期）──
+let _invPayTarget=null;
+function openInvPayModal(id){
+  const inv=S.invoices[id];if(!inv)return;
+  _invPayTarget=id;
+  document.getElementById('ipay-info').innerHTML=
+    `<b>${escHtml(inv.invoiceNumber||'')}</b>・${escHtml(S.clients[inv.clientId]?.name||'')}<br>金額 <span style="color:#1e6038;font-family:'JetBrains Mono',monospace;font-weight:700">$${fmtMoney(inv.total||0)}</span>`;
+  const d=new Date();
+  document.getElementById('ipay-date').value=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  document.getElementById('ipay-err').textContent='';
+  openM('inv-pay-modal');
+}
+function confirmInvPay(){
+  const val=document.getElementById('ipay-date').value;
+  if(!val){document.getElementById('ipay-err').textContent='請填寫實際入帳日期才能確認';return;}
+  const inv=S.invoices[_invPayTarget];
+  if(!inv){closeM('inv-pay-modal');return;}
+  inv.status='paid';inv.paidAt=Date.now();
+  inv.paidDate=val.replace(/-/g,'/');
+  inv.updatedAt=Date.now();
+  saveInvoiceObj(inv);
+  closeM('inv-pay-modal');
+  renderCashflow();
+  toast(`已入帳 — ${inv.paidDate}`);
+}
+// ── 入帳時程：所有待收 invoice 按付款期限排序（跨月）──
+function renderArSchedule(){
+  const el=document.getElementById('cash-ar');if(!el)return;
+  const ar=invoiceList().filter(i=>i.status==='sent')
+    .map(i=>({inv:i,due:(i.dueDate||'').replace(/\//g,'-')}))
+    .sort((a,b)=>(a.due||'9999').localeCompare(b.due||'9999'));
+  if(!ar.length){el.innerHTML='';return;}
+  const badge=(due)=>{
+    if(!due)return '<span style="color:#999;font-size:.62rem">無期限</span>';
+    const n=dUntil(due);
+    if(n===null)return '';
+    if(n<0)return `<span class="due-badge over">逾期 ${-n} 天</span>`;
+    if(n===0)return `<span class="due-badge today">今天</span>`;
+    if(n<=7)return `<span class="due-badge soon">${n} 天後</span>`;
+    return `<span class="due-badge" style="background:#f1eee6;color:#666">${n} 天後</span>`;
+  };
+  const total=ar.reduce((s,a)=>s+(a.inv.total||0),0);
+  const overdue=ar.filter(a=>a.due&&dUntil(a.due)!==null&&dUntil(a.due)<0).reduce((s,a)=>s+(a.inv.total||0),0);
+  el.innerHTML=`<div style="padding:0 14px 6px">
+    <div class="cash-row" style="cursor:default">
+      <div style="padding:10px 14px 4px;font-size:.72rem;font-weight:700;color:#1e6038">📅 入帳時程（${ar.length} 張待收 · 合計 $${fmtMoney(total)}${overdue?` · <span style="color:#c53030">逾期 $${fmtMoney(overdue)}</span>`:''}）</div>
+      ${ar.map(a=>{const inv=a.inv;
+        return `<div class="cash-line" style="grid-template-columns:100px 1fr 150px 90px 90px 70px;padding:6px 14px">
+          <div class="num" style="text-align:left;font-weight:700">${escHtml(inv.invoiceNumber||'?')}</div>
+          <div class="lab">${escHtml(S.clients[inv.clientId]?.name||'(客戶已刪除)')}</div>
+          <div class="num" style="font-size:.64rem;color:#888;text-align:left">請款 ${escHtml((inv.issuedDate||'?').slice(5))} → 預計 ${escHtml((inv.dueDate||'—').slice(5))}</div>
+          <div style="text-align:right">${badge(a.due)}</div>
+          <div class="num" style="color:#a86a00;font-weight:700">$${fmtMoney(inv.total||0)}</div>
+          <div style="text-align:right"><button class="nav-btn primary" style="font-size:.62rem;padding:2px 8px" onclick="openInvPayModal('${inv.id}')">✓ 入帳</button></div>
+        </div>`;}).join('')}
+    </div>
+  </div>`;
+}
+// ── 公司制月份區塊（月損益 + 薪資 + invoice 列）──
+function renderCompanyMonthSection(month,invs){
+  let sub=0,tax=0,cost=0,net=0,exp=0,recvAmt=0,sentAmt=0,recvN=0,sentN=0;
+  invs.forEach(inv=>{
+    const c=computeInvoiceCompany(inv);
+    sub+=c.totals.sub;tax+=c.totals.tax;cost+=c.totals.cost;net+=c.totals.net;exp+=c.totals.expenses;
+    if(inv.status==='paid'){recvAmt+=inv.total||0;recvN++;}
+    else{sentAmt+=inv.total||0;sentN++;}
+  });
+  const sal=monthSalary(month);
+  const salTotal=sal.reduce((s,x)=>s+(x.amount||0),0);
+  const profit=net-salTotal;
+  const pill=(cls,k,vHtml,uHtml='',style='')=>`<div class="cash-month-pill ${cls}" style="${style}"><div class="k">${k}</div><div class="v">${vHtml}</div>${uHtml}</div>`;
+  const monthPretty=month.replace('-',' / ');
+  return `<section class="cash-month">
+    <div class="cash-month-header" style="background:var(--green-soft);border-color:var(--green-line)">
+      <div class="cmh-top">
+        <div class="cmh-title" style="color:#1e6038">🏢 ${escHtml(monthPretty)} <span style="font-size:.6rem;font-weight:400;color:#666">公司制</span></div>
+        <div class="cmh-meta">${invs.length} 張 · <b>$${fmtMoney(sub)}</b></div>
+      </div>
+      <div class="cmh-pills">
+        ${pill('recv','已收',`$${fmtMoney(recvAmt)}`,`<div class="u" style="color:#666">${recvN} 張</div>`)}
+        ${pill('pend','應收',`$${fmtMoney(sentAmt)}`,`<div class="u" style="color:#666">${sentN} 張</div>`)}
+        ${pill('','外包＋支出',`-$${fmtMoney(cost+exp)}`,'','background:#fde8e8;border-color:#e8aaaa;color:#c53030')}
+        ${pill('','薪資',`-$${fmtMoney(salTotal)}`,`<div class="u" style="color:#666">${sal.filter(x=>x.pay?.paid).length}/${sal.length} 已發</div>`,'background:#fde8e8;border-color:#e8aaaa')}
+        ${pill('','代繳稅',`-$${fmtMoney(tax)}`,'','background:#f1eee6;border-color:#e3e0d6')}
+        ${pill('',profit>=0?'當月淨利':'當月虧損',`${profit>=0?'':'-'}$${fmtMoney(Math.abs(profit))}`,'',profit>=0?'background:#e8f5ec;border-color:#7de89a;color:#1e6038':'background:#fde8e8;border-color:#e8aaaa;color:#c53030')}
+      </div>
+      <div style="font-size:.6rem;color:#888">按請款月（權責）：收入 − 稅 − 外包 − 專案支出 − 薪資 ＝ 淨利；收入全數入公司帳，不分潤</div>
+    </div>
+    ${renderSalaryBlock(month,sal)}
+    <div>${invs.map(renderCashInvoiceRowCompany).join('')}</div>
+  </section>`;
+}
+function renderSalaryBlock(month,sal){
+  sal=sal||monthSalary(month);
+  const anyCfg=sal.some(x=>x.amount>0||x.pay?.paid);
+  return `<div class="cash-row" style="cursor:default;padding:10px 14px">
+    <div style="font-size:.68rem;font-weight:700;color:#1e6038;margin-bottom:4px">👥 薪資（員工）<span style="font-weight:400;color:#888">— 額度於「設定」頁維護</span></div>
+    ${anyCfg?sal.map(x=>`<div style="display:flex;align-items:center;gap:12px;font-size:.76rem;padding:5px 0;border-bottom:1px solid #efece3">
+      <b style="min-width:36px">${escHtml(x.name)}</b>
+      <span style="font-family:'JetBrains Mono',monospace;font-weight:700">${x.amount?'$'+fmtMoney(x.amount):'—'}</span>
+      <label class="cash-payout-lbl" style="margin-left:auto">
+        <input type="checkbox" ${x.pay?.paid?'checked':''} ${x.amount||x.pay?.paid?'':'disabled'} onchange="toggleSalaryPaid('${month}','${x.key}',this.checked)" style="accent-color:#1e6038;margin:0">
+        <span style="color:${x.pay?.paid?'#1e6038':'#c53030'};font-weight:700">${x.pay?.paid?'已發':'未發'}</span>
+      </label>
+      <input type="date" class="cash-payout-date" value="${escHtml((x.pay?.date||'').replace(/\//g,'-'))}" ${x.pay?.paid?'':'disabled'} onchange="updateSalaryPayDate('${month}','${x.key}',this.value)" title="發薪日期">
+    </div>`).join(''):`<div style="font-size:.7rem;color:#a86a00">尚未設定薪資額度 — 到「設定」頁的「公司制薪資」填入每月金額</div>`}
+  </div>`;
+}
+// ── 公司制 invoice 列（欄位：項目｜金額｜外包｜稅｜公司淨額）──
+function renderCashInvoiceRowCompany(inv){
+  const c=S.clients[inv.clientId];
+  const cName=c?c.name:'(客戶已刪除)';
+  const co=computeInvoiceCompany(inv);
+  const isExpanded=S.cashFilter.expandedIds.has(inv.id);
+  const GRID='grid-template-columns:1fr 80px 80px 70px 90px 28px';
+  const linesHtml=co.lines.map(l=>{
+    const csTitle=l.cs?escHtml(l.cs.title||''):'<span class="cash-no-case">手動項目</span>';
+    const addonMark=l.addonCount?`<span style="color:#a08560;font-size:.6rem;margin-left:4px" title="金額已含加減項">· 含 ${l.addonCount} 加減項</span>`:'';
+    return `<div class="cash-line" style="${GRID}">
+      <div class="lab">${escHtml(l.it.label||'')}<div class="who">${csTitle}</div></div>
+      <div class="num">$${fmtMoney(l.sub)}</div>
+      <div class="num cost">${l.cost?'-$'+fmtMoney(l.cost):'—'}</div>
+      <div class="num" style="color:#c53030;font-size:.64rem">${l.tax?'-$'+fmtMoney(l.tax):'—'}</div>
+      <div class="num" style="color:#1e6038;font-weight:700">$${fmtMoney(l.net)}</div>
+      <button class="act-btn" onclick="openCashItemEdit('${inv.id}',${l.itemIdx})" title="編輯外包成本" style="padding:2px 4px">✎</button>
+    </div>`;
+  }).join('');
+  const dueNorm=(inv.dueDate||'').replace(/\//g,'-');
+  const dn=inv.status==='sent'&&dueNorm?dUntil(dueNorm):null;
+  const dueHint=inv.status==='sent'
+    ?`<span style="font-size:.6rem;color:${dn!==null&&dn<0?'#c53030':'#888'};margin-left:6px">${dn!==null&&dn<0?`逾期 ${-dn} 天`:`預計入帳 ${escHtml((inv.dueDate||'—').slice(5))}`}</span>`
+    :(inv.paidDate?`<span style="font-size:.6rem;color:#1e6038;margin-left:6px">✅ ${escHtml(inv.paidDate.slice(5))} 入帳</span>`:'');
+  return `<div class="cash-row${isExpanded?' expanded':''}" data-id="${inv.id}">
+    <div class="cash-row-head" onclick="toggleCashRow('${inv.id}')">
+      <div class="ino">${escHtml(inv.invoiceNumber||'')}</div>
+      <div class="cli">${escHtml(cName)}<div style="font-size:.62rem;color:#888;font-family:'JetBrains Mono',monospace;margin-top:2px">${inv.billingMonth||''}</div></div>
+      <div class="mon">${(inv.items||[]).length} 項${dueHint}</div>
+      <div onclick="event.stopPropagation()">
+        <div class="cash-status-toggle">
+          <button class="${inv.status==='sent'?'active sent':''}" onclick="setInvoicePaymentStatus('${inv.id}','sent')">應收</button>
+          <button class="${inv.status==='paid'?'active paid':''}" onclick="setInvoicePaymentStatus('${inv.id}','paid')">已入帳</button>
+        </div>
+      </div>
+      <div class="amt">$${fmtMoney(inv.total||0)}</div>
+      <div class="chev">▶</div>
+    </div>
+    <div class="cash-row-detail">
+      <div class="cash-line cash-line-hdr" style="${GRID}">
+        <div>項目</div><div style="text-align:right">金額</div><div style="text-align:right">外包</div><div style="text-align:right">稅</div><div style="text-align:right">公司淨額</div><div></div>
+      </div>
+      ${linesHtml}
+      <div style="margin:8px 0;padding:8px 10px;background:#faf6ee;border:1px dashed #d8c8aa;border-radius:7px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${(inv.expenses||[]).length?'6px':'0'}">
+          <span style="font-size:.64rem;font-weight:700;color:#a08560;letter-spacing:.4px">📦 專案支出（自公司淨額扣除）</span>
+          <button class="nav-btn" onclick="addInvExpense('${inv.id}')" style="font-size:.64rem;padding:2px 8px">＋ 支出</button>
+        </div>
+        ${(inv.expenses||[]).map(e=>{
+          const editing=S.cashFilter.editingExpenseId===e.id;
+          if(!editing){
+            return `<div style="display:grid;grid-template-columns:120px 1fr 110px 26px;gap:6px;align-items:center;margin-bottom:4px;font-size:.7rem">
+              <span style="color:#a08560;background:#fff;border:1px solid #e0d4b8;border-radius:4px;padding:3px 6px;text-align:center">${escHtml(e.category||'其他')}</span>
+              <span style="color:#1a1a1a;padding:3px 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(e.label||'（未命名）')}</span>
+              <span style="font-family:'JetBrains Mono',monospace;color:#c53030;text-align:right;padding:3px 2px">-$${fmtMoney(e.amount||0)}</span>
+              <button class="act-btn" onclick="editInvExpense('${e.id}')" title="編輯此筆支出" style="padding:2px 4px">✎</button>
+            </div>`;
+          }
+          return `<div style="display:grid;grid-template-columns:120px 1fr 110px 52px;gap:6px;align-items:center;margin-bottom:4px;background:#fff;border:1px solid #7de89a;border-radius:6px;padding:4px">
+            <select onchange="updateInvExpense('${inv.id}','${e.id}','category',this.value)" style="font-size:.68rem;padding:3px 6px;border:1px solid #e3e0d6;border-radius:4px;background:#fff;font-family:inherit">
+              ${['器材租借','場地租借','其他'].map(cat=>`<option value="${cat}" ${e.category===cat?'selected':''}>${cat}</option>`).join('')}
+            </select>
+            <input type="text" value="${escHtml(e.label||'')}" placeholder="說明" onchange="updateInvExpense('${inv.id}','${e.id}','label',this.value)" style="font-size:.68rem;padding:3px 6px;border:1px solid #e3e0d6;border-radius:4px;background:#fff;font-family:inherit">
+            <input type="number" value="${e.amount||0}" onchange="updateInvExpense('${inv.id}','${e.id}','amount',parseInt(this.value)||0)" style="font-size:.68rem;padding:3px 6px;border:1px solid #e3e0d6;border-radius:4px;background:#fff;font-family:'JetBrains Mono',monospace;text-align:right">
+            <div style="display:flex;gap:2px">
+              <button class="act-btn" onclick="doneInvExpense()" title="完成編輯" style="padding:2px 4px;color:#1e6038">✓</button>
+              <button class="act-btn del" onclick="delInvExpense('${inv.id}','${e.id}')" title="刪除" style="padding:2px 4px">✕</button>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="cash-totals" style="${GRID}">
+        <div>合計</div>
+        <div class="num">$${fmtMoney(co.totals.sub)}</div>
+        <div class="num" style="color:#c53030">${co.totals.cost?'-$'+fmtMoney(co.totals.cost):'—'}</div>
+        <div class="num" style="color:#c53030">${co.totals.tax?'-$'+fmtMoney(co.totals.tax):'—'}</div>
+        <div class="num" style="color:#1e6038">$${fmtMoney(co.totals.net)}</div>
+        <div></div>
+      </div>
+      ${co.totals.expenses>0?`<div style="text-align:right;padding:4px;font-size:.64rem;color:#a08560">專案支出 $${fmtMoney(co.totals.expenses)} 已自公司淨額扣除</div>`:''}
+      ${co.totals.tax>0?`<div style="text-align:right;padding:4px;font-size:.64rem;color:#c53030">已扣 5% 稅金 $${fmtMoney(co.totals.tax)}（免稅優惠 — 稅內含於收款）</div>`:''}
+      ${!inv.taxExempt&&S.clients[inv.clientId]?.issuesReceipt?`<div style="text-align:right;padding:4px;font-size:.64rem;color:#1e4a80">開發票客戶 — 5% 稅外加，不自收款扣除</div>`:''}
+      <div style="text-align:right;padding:4px;font-size:.68rem;color:#1e6038;font-weight:700">🏢 公司淨額 $${fmtMoney(co.totals.net)}</div>
+    </div>
+  </div>`;
+}
+
 function renderCashflow(){
   refreshCashFilters();
   const list=document.getElementById('cash-list');
@@ -7973,11 +8321,15 @@ function renderCashflow(){
   if(clientSel!=='all')invs=invs.filter(i=>i.clientId===clientSel);
   if(statusSel!=='all')invs=invs.filter(i=>i.status===statusSel);
   countEl.textContent=`${invs.length} 張`;
-  // Aggregate summary
-  const agg={sent:{count:0,amt:0},paid:{count:0,amt:0},qi:0,wu:0,studio:0,cost:0};
+  // Aggregate summary — 分潤三卡只計歷史（分潤制）月份；公司制月份另計公司淨額
+  const agg={sent:{count:0,amt:0},paid:{count:0,amt:0},qi:0,wu:0,studio:0,cost:0,coNet:0,coN:0};
   invs.forEach(inv=>{
     if(inv.status==='sent'){agg.sent.count++;agg.sent.amt+=inv.total||0;}
     else if(inv.status==='paid'){agg.paid.count++;agg.paid.amt+=inv.total||0;}
+    if(isCompanyMonth(inv.billingMonth)){
+      agg.coNet+=computeInvoiceCompany(inv).totals.net;agg.coN++;
+      return;
+    }
     const split=computeInvoiceSplit(inv);
     agg.qi+=split.totals.qi;
     agg.wu+=split.totals.wu;
@@ -7996,28 +8348,34 @@ function renderCashflow(){
       <div class="val green">$${fmtMoney(agg.paid.amt)}</div>
       <div class="sub">${agg.paid.count} 張 paid</div>
     </div>
-    <div class="cash-card paid">
+    ${agg.coN?`<div class="cash-card recv" style="border-color:var(--green-line)">
+      <div class="lbl" style="color:#1e6038">🏢 公司淨額</div>
+      <div class="val green">$${fmtMoney(agg.coNet)}</div>
+      <div class="sub">2026/10 起 · ${agg.coN} 張（薪資另計於各月）</div>
+    </div>`:''}
+    ${(agg.qi||agg.wu||agg.studio)?`<div class="cash-card paid">
       <div class="lbl">💰 齊勞務</div>
       <div class="val blue">$${fmtMoney(agg.qi)}</div>
-      <div class="sub">扣外包後 70%</div>
+      <div class="sub">分潤制（9 月前）扣外包後 70%</div>
     </div>
     <div class="cash-card paid" style="border-color:#f0c878;background:#fff8ee">
       <div class="lbl" style="color:#a86a00">💰 巫勞務</div>
       <div class="val orange">$${fmtMoney(agg.wu)}</div>
-      <div class="sub">扣外包後 70%</div>
+      <div class="sub">分潤制（9 月前）扣外包後 70%</div>
     </div>
     <div class="cash-card studio">
       <div class="lbl">🏠 工作室分潤</div>
       <div class="val gold">$${fmtMoney(agg.studio)}</div>
-      <div class="sub">扣外包後 30%</div>
-    </div>
+      <div class="sub">分潤制（9 月前）扣外包後 30%</div>
+    </div>`:''}
     ${agg.cost>0?`<div class="cash-card" style="border-color:#e8aaaa;background:#fde8e8">
       <div class="lbl" style="color:#c53030">📤 支出/外包成本</div>
       <div class="val" style="color:#c53030">$${fmtMoney(agg.cost)}</div>
       <div class="sub">已從淨額扣除</div>
     </div>`:''}
   `;
-  // Render 應付外包款 section (independent of invoice status)
+  // 入帳時程（跨月應收）+ 應付外包款
+  renderArSchedule();
   renderOutsourcePayables();
   // Render invoice rows
   if(!invs.length){list.innerHTML='';empty.style.display='flex';return;}
@@ -8045,11 +8403,14 @@ function renderCashflow(){
       renderCashMonthSection(m,ms)
     ).join('');
   }else{
-    list.innerHTML=invs.map(renderCashInvoiceRow).join('');
+    // 指定公司制月份時：薪資區塊置頂
+    const salBlock=(monthSel!=='all'&&isCompanyMonth(monthSel))?renderSalaryBlock(monthSel):'';
+    list.innerHTML=salBlock+invs.map(renderCashInvoiceRow).join('');
   }
 }
 // Extracted: render one invoice's expandable row + detail block.
 function renderCashInvoiceRow(inv){
+  if(isCompanyMonth(inv.billingMonth))return renderCashInvoiceRowCompany(inv);
   const c=S.clients[inv.clientId];
   const cName=c?c.name:'(客戶已刪除)';
   const split=computeInvoiceSplit(inv);
@@ -8161,6 +8522,7 @@ function renderCashInvoiceRow(inv){
 }
 // Render one month bucket: header with mini agg + the month's invoice cards.
 function renderCashMonthSection(month,invs){
+  if(isCompanyMonth(month))return renderCompanyMonthSection(month,invs);
   const a=computeMonthlyAgg(invs);
   const monthPretty=month.includes('-')?month.replace('-',' / '):month;
   const total=(a.sent.amt||0)+(a.paid.amt||0);
@@ -8410,6 +8772,11 @@ function setOutsourcePaid(caseId,paid){
 function setInvoicePaymentStatus(id,status){
   const inv=S.invoices[id];if(!inv)return;
   if(!['sent','paid'].includes(status))return;
+  // 公司制月份：入帳需確認並必填實際入帳日期；切回應收則清除
+  if(isCompanyMonth(inv.billingMonth)){
+    if(status==='paid'&&inv.status!=='paid'){openInvPayModal(id);return;}
+    if(status==='sent')inv.paidDate='';
+  }
   inv.status=status;
   if(status==='paid'){
     inv.paidAt=Date.now();
@@ -8446,6 +8813,7 @@ const FC_TIERS={
   O:{name:'外包',color:'#c53030',sign:-1},
   L:{name:'勞務未付',color:'#a86a00',sign:-1},
   LE:{name:'勞務(估)',color:'#a86a00',sign:-1},
+  SAL:{name:'薪資',color:'#5a3d80',sign:-1},
 };
 function computeForecast(){
   const now=new Date();
@@ -8490,6 +8858,12 @@ function computeForecast(){
       const tier=st==='done'?'B':'C';
       buckets.get(keyFor(ym)).inflows.push({tier,caseId:cs.id,label:`${cs.title||''}｜${cName}`,date:cs.dueDate||'',amt,click:`openEditCase('${cs.id}')`});
     }
+    // 公司制月份（2026-10 起）：收入全數入公司帳，無勞務分潤估算
+    if(isCompanyMonth(ym)){
+      const coCost=cs.isOutsourced?computeOutsourceCost(cs):(cs.cost||0);
+      addStudio(keyFor(ym),'e',Math.max(0,amt-coCost));
+      return;
+    }
     // 勞務估算（粗估，不含稅內含與覆寫）：
     //   外包歸屬 project（舊制）→ net = 金額 − 外包成本，再分 70/100%
     //   外包歸屬 owner → 先按全額分，再由勞務方份額扣外包費
@@ -8508,8 +8882,17 @@ function computeForecast(){
       addStudio(keyFor(ym),'e',bearer==='owner'?Math.max(0,net-cost):net);
     }
   });
+  // SAL: 公司制月份的薪資支出（未發的列入該月）
+  monthKeys.filter(isCompanyMonth).forEach(m=>{
+    monthSalary(m).forEach(x=>{
+      if(x.amount>0&&!x.pay?.paid){
+        buckets.get(m).outflows.push({tier:'SAL',who:x.name,label:`${x.name} 薪資｜${m.replace('-','/')}`,date:'',amt:x.amount,click:`switchTab('cashflow')`});
+      }
+    });
+  });
   // L: 已確定的勞務未付（sent/paid invoices 的未勾付款）→ 當月（已到期義務）
-  invoiceList().filter(i=>i.status==='sent'||i.status==='paid').forEach(inv=>{
+  // 公司制 invoice 無分潤 → 排除
+  invoiceList().filter(i=>(i.status==='sent'||i.status==='paid')&&!isCompanyMonth(i.billingMonth)).forEach(inv=>{
     const split=computeInvoiceSplit(inv);
     [['qi','齊',split.totals.qi],['wu','巫',split.totals.wu]].forEach(([k,name,amtK])=>{
       if(amtK>0&&!inv.payouts?.[k]?.paid){
