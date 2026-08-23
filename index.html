@@ -1365,7 +1365,7 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
       <div id="f-outsource-filename-preview" style="display:none;margin-top:8px;padding:6px 10px;background:#fbfaf6;border:1px dashed #e3e0d6;border-radius:6px;font-size:.66rem;color:#666;font-family:'JetBrains Mono',monospace"></div>
     </div>
 
-    <!-- 分潤設定 — 是否與工作室分潤（2026-10 公司化後的新案件自動隱藏） -->
+    <!-- 分潤設定 — 是否與工作室分潤（2026-09 公司化後的新案件自動隱藏） -->
     <div class="form-group full" id="f-share-section" style="background:#fff8ee;border:1px solid #f0d8a0;border-radius:8px;padding:10px 12px">
       <label class="form-label" style="color:#a86a00;margin-bottom:6px">💸 分潤設定</label>
       <div style="display:flex;gap:14px;font-size:.78rem;align-items:center;flex-wrap:wrap">
@@ -1776,7 +1776,7 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
       </div>
     </div>
     <div class="form-group full" style="background:var(--green-soft);border:1px solid var(--green-line);border-radius:10px;padding:10px 12px">
-      <label class="form-label" style="color:var(--green)">🏢 公司制薪資（2026/10 起生效）</label>
+      <label class="form-label" style="color:var(--green)">🏢 公司制薪資（2026/09 起生效）</label>
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">齊 · 每月薪資</label>
@@ -1787,7 +1787,7 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
           <input class="form-input" id="set-salary-wu" type="number" placeholder="55000" inputmode="numeric">
         </div>
       </div>
-      <div style="font-size:.62rem;color:#666;margin-top:3px">金流頁 2026/10 起的月份會自動帶出薪資支出，可逐月標記已發/未發並計入月損益</div>
+      <div style="font-size:.62rem;color:#666;margin-top:3px">金流頁 2026/09 起的月份會自動帶出薪資支出，可逐月標記已發/未發並計入月損益</div>
     </div>
 
     <div class="form-group full">
@@ -2154,7 +2154,7 @@ function initFirebase(){
     S.outsourcers=snap.val()||{};
     renderCurrentTab();
   });
-  // 公司制（2026-10 起）：每月發薪紀錄 {month:{qi/wu:{paid,date,amount,updatedBy}}}
+  // 公司制（2026-09 起）：每月發薪紀錄 {month:{qi/wu:{paid,date,amount,updatedBy}}}
   _db.ref(`${ROOT}/salaryPayments`).on('value',snap=>{
     S.salaryPayments=snap.val()||{};
     renderCurrentTab();
@@ -2957,7 +2957,7 @@ function openAddCase(){
   updateFShareVisibility();
   openM('case-modal');
 }
-// 公司化（2026-10 起）：交期落在公司制月份的案件收入全歸公司，不再分潤 → 隱藏分潤設定
+// 公司化（2026-09 起）：交期落在公司制月份的案件收入全歸公司，不再分潤 → 隱藏分潤設定
 function updateFShareVisibility(){
   const due=document.getElementById('f-due').value||'';
   const sec=document.getElementById('f-share-section');
@@ -8044,12 +8044,12 @@ function computeMonthlyAgg(invs){
   return a;
 }
 // ═══════════════════════════════════════════════════
-// ── 公司制（2026-10 起）──────────────────────────────
-// 依 billingMonth 自動分流：≥ 2026-10 → 公司出入帳檢視（收入全數
+// ── 公司制（2026-09 起）──────────────────────────────
+// 依 billingMonth 自動分流：≥ 2026-09 → 公司出入帳檢視（收入全數
 // 入公司帳、齊/巫為薪資支出、不再分潤）；以前 → 現行分潤檢視，
 // 歷史數字完全不重算。computeInvoiceSplit 保留給歷史月份。
 // ═══════════════════════════════════════════════════
-const COMPANY_ERA='2026-10';
+const COMPANY_ERA='2026-09';
 function isCompanyMonth(m){return !!m&&m>=COMPANY_ERA;}
 function salaryConfig(){
   const s=S.globalSettings?.salaries||{};
@@ -8351,22 +8351,22 @@ function renderCashflow(){
     ${agg.coN?`<div class="cash-card recv" style="border-color:var(--green-line)">
       <div class="lbl" style="color:#1e6038">🏢 公司淨額</div>
       <div class="val green">$${fmtMoney(agg.coNet)}</div>
-      <div class="sub">2026/10 起 · ${agg.coN} 張（薪資另計於各月）</div>
+      <div class="sub">2026/09 起 · ${agg.coN} 張（薪資另計於各月）</div>
     </div>`:''}
     ${(agg.qi||agg.wu||agg.studio)?`<div class="cash-card paid">
       <div class="lbl">💰 齊勞務</div>
       <div class="val blue">$${fmtMoney(agg.qi)}</div>
-      <div class="sub">分潤制（9 月前）扣外包後 70%</div>
+      <div class="sub">分潤制（8 月前）扣外包後 70%</div>
     </div>
     <div class="cash-card paid" style="border-color:#f0c878;background:#fff8ee">
       <div class="lbl" style="color:#a86a00">💰 巫勞務</div>
       <div class="val orange">$${fmtMoney(agg.wu)}</div>
-      <div class="sub">分潤制（9 月前）扣外包後 70%</div>
+      <div class="sub">分潤制（8 月前）扣外包後 70%</div>
     </div>
     <div class="cash-card studio">
       <div class="lbl">🏠 工作室分潤</div>
       <div class="val gold">$${fmtMoney(agg.studio)}</div>
-      <div class="sub">分潤制（9 月前）扣外包後 30%</div>
+      <div class="sub">分潤制（8 月前）扣外包後 30%</div>
     </div>`:''}
     ${agg.cost>0?`<div class="cash-card" style="border-color:#e8aaaa;background:#fde8e8">
       <div class="lbl" style="color:#c53030">📤 支出/外包成本</div>
@@ -8858,7 +8858,7 @@ function computeForecast(){
       const tier=st==='done'?'B':'C';
       buckets.get(keyFor(ym)).inflows.push({tier,caseId:cs.id,label:`${cs.title||''}｜${cName}`,date:cs.dueDate||'',amt,click:`openEditCase('${cs.id}')`});
     }
-    // 公司制月份（2026-10 起）：收入全數入公司帳，無勞務分潤估算
+    // 公司制月份（2026-09 起）：收入全數入公司帳，無勞務分潤估算
     if(isCompanyMonth(ym)){
       const coCost=cs.isOutsourced?computeOutsourceCost(cs):(cs.cost||0);
       addStudio(keyFor(ym),'e',Math.max(0,amt-coCost));
