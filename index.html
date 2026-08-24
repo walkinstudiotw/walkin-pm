@@ -997,6 +997,8 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
     <div class="cash-summary" id="cash-summary"></div>
     <!-- 入帳時程（跨月應收帳款，按預計入帳日） -->
     <div id="cash-ar"></div>
+    <!-- 專案總覽（isProject 案件：分期請款＋專案支出＋跨月淨額） -->
+    <div id="cash-projects"></div>
     <!-- Invoice list with expand-to-view-split -->
     <div id="cash-list" class="cash-list"></div>
     <div id="cash-empty" class="empty-state" style="display:none">
@@ -1238,6 +1240,10 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
     <!-- Billing link section: 獨立計費 / 附屬於另一個案件 -->
     <div class="form-group full" style="background:#ffffff;border:1px solid #e3e0d6;border-radius:8px;padding:10px 12px">
       <label class="form-label" style="margin-bottom:6px">💰 計費關聯</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.78rem;margin-bottom:8px;background:var(--green-soft);border:1px solid var(--green-line);border-radius:8px;padding:6px 10px">
+        <input type="checkbox" id="f-is-project" style="accent-color:#1e6038">
+        <span>📦 此案為<b>專案</b>（一次簽多集：金額填合約總額，各集用「附屬案件」掛在此案下；請款/分期與支出在金流頁的專案卡操作）</span>
+      </label>
       <div style="display:flex;gap:14px;font-size:.78rem;margin-bottom:8px">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
           <input type="radio" name="f-billing-mode" value="independent" id="f-billing-independent" onchange="onBillingModeChange()" style="accent-color:#1e6038">
@@ -1658,6 +1664,68 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeM('inv-pay-modal')">取消</button>
       <button class="btn-primary" onclick="confirmInvPay()">確認入帳</button>
+    </div>
+  </div>
+</div>
+
+<!-- 專案開請款 MODAL -->
+<div class="modal-overlay" id="proj-bill-modal">
+  <div class="modal" style="width:400px">
+    <div class="modal-title">🧾 開請款 · <span id="pb-name"></span></div>
+    <div style="font-size:.76rem;color:#666" id="pb-info"></div>
+    <div class="form-group">
+      <label class="form-label">請款方式</label>
+      <div style="display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden">
+        <button type="button" id="pb-seg-full" class="filter-pill" style="flex:1;border:0;border-radius:0" onclick="setProjBillMode('full')">剩餘全額</button>
+        <button type="button" id="pb-seg-part" class="filter-pill" style="flex:1;border:0;border-radius:0" onclick="setProjBillMode('part')">自訂金額（分期）</button>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">期別標籤</label>
+        <input class="form-input" id="pb-label" placeholder="例：訂金 50%">
+      </div>
+      <div class="form-group">
+        <label class="form-label">金額</label>
+        <input class="form-input" id="pb-amt" type="number" inputmode="numeric" style="font-family:'JetBrains Mono',monospace">
+      </div>
+    </div>
+    <div id="pb-err" style="font-size:.66rem;color:#c53030;min-height:15px"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeM('proj-bill-modal')">取消</button>
+      <button class="btn-primary" onclick="confirmProjBill()">產生 Invoice（草稿）</button>
+    </div>
+  </div>
+</div>
+
+<!-- 專案支出 MODAL -->
+<div class="modal-overlay" id="proj-exp-modal">
+  <div class="modal" style="width:400px">
+    <div class="modal-title">📦 新增專案支出 · <span id="pe-name"></span></div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">類別</label>
+        <select class="form-select" id="pe-cat"><option>器材租借</option><option>場地租借</option><option>交通</option><option>其他</option></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">金額</label>
+        <input class="form-input" id="pe-amt" type="number" inputmode="numeric" style="font-family:'JetBrains Mono',monospace">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">說明</label>
+        <input class="form-input" id="pe-label" placeholder="例：鏡頭組租借 3 日">
+      </div>
+      <div class="form-group">
+        <label class="form-label">支出日期（計入該月損益）</label>
+        <input class="form-input" id="pe-date" type="date" style="font-family:'JetBrains Mono',monospace">
+      </div>
+    </div>
+    <div id="pe-err" style="font-size:.66rem;color:#c53030;min-height:15px"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeM('proj-exp-modal')">取消</button>
+      <button class="btn-primary" onclick="confirmProjExp()">加入支出</button>
     </div>
   </div>
 </div>
@@ -2558,6 +2626,11 @@ function filteredCases(){
     arr=arr.filter(c=>{
       if(c.linkedToCaseId)return false;
       if(c.billedExternally)return false;  // 系統外已請款的歷史案件
+      if(c.isProject){
+        // 專案：一案多期 — 已請款（非草稿）小於合約額即視為未請款完
+        const billed=projectBilledParts(c.id).filter(p=>p.inv.status!=='draft').reduce((s,p)=>s+p.amt,0);
+        return billed<(c.pricing?.amount||0);
+      }
       const inv=resolveCaseInvoice(c);
       return !inv||inv.status==='draft';
     });
@@ -2648,7 +2721,7 @@ function renderCases(){
       const sum=items.filter(c=>(c.status||'todo')!=='done'&&!c.linkedToCaseId).reduce((s,c)=>s+(c.pricing?.amount||0),0);
       const gk='c:'+k,closed=_cfClosed.has(gk);
       html+=`<tr class="cf-ghead${closed?' closed':''}" onclick="cfToggleGroup('${gk}')"><td colspan="11"><span class="g-arrow">▼</span><span class="g-name" style="border-left:4px solid ${clientColor(k)};padding-left:8px">${escHtml(clientName(k))}</span><span class="g-stat">進行中 <b class="d">${act}</b>${over?` · 逾期 <b class="o">${over}</b>`:''} · 共 ${items.length} 件</span>${sum?`<span class="g-sum">進行中合計 $${fmtMoney(sum)}</span>`:''}</td></tr>`;
-      if(!closed)html+=items.map(c=>caseRowHtml(c,childCounts,'')).join('');
+      if(!closed)html+=orderProjectChildren(items).map(c=>caseRowHtml(c,childCounts,'')).join('');
     });
   }else if(grp==='month'){
     const overdue=arr.filter(caseIsOverdue);
@@ -2661,7 +2734,7 @@ function renderCases(){
     if(overdue.length){
       const closed=_cfClosed.has('m:over');
       html+=`<tr class="cf-ghead overdue-g${closed?' closed':''}" onclick="cfToggleGroup('m:over')"><td colspan="11"><span class="g-arrow">▼</span><span class="g-name">⚠️ 逾期</span><span class="g-stat"><b class="o">${overdue.length}</b> 件需要處理</span></td></tr>`;
-      if(!closed)html+=overdue.map(c=>caseRowHtml(c,childCounts,'')).join('');
+      if(!closed)html+=orderProjectChildren(overdue).map(c=>caseRowHtml(c,childCounts,'')).join('');
     }
     const nd=new Date(),nowYm=`${nd.getFullYear()}-${String(nd.getMonth()+1).padStart(2,'0')}`;
     [...byM.keys()].sort((a,b)=>a==='nodate'?1:b==='nodate'?-1:a.localeCompare(b)).forEach(m=>{
@@ -2669,10 +2742,10 @@ function renderCases(){
       const act=items.filter(c=>(c.status||'todo')!=='done').length;
       const gk='m:'+m,closed=_cfClosed.has(gk);
       html+=`<tr class="cf-ghead${closed?' closed':''}" onclick="cfToggleGroup('${gk}')"><td colspan="11"><span class="g-arrow">▼</span><span class="g-name">${m==='nodate'?'無交期':m.replace('-','/')}</span>${m===nowYm?'<span class="g-stat"><b class="d">本月</b></span>':''}<span class="g-stat">進行中 ${act} · 共 ${items.length} 件</span></td></tr>`;
-      if(!closed)html+=items.map(c=>caseRowHtml(c,childCounts,'')).join('');
+      if(!closed)html+=orderProjectChildren(items).map(c=>caseRowHtml(c,childCounts,'')).join('');
     });
   }else{
-    html=arr.map(c=>caseRowHtml(c,childCounts,'')).join('');
+    html=orderProjectChildren(arr).map(c=>caseRowHtml(c,childCounts,'')).join('');
   }
   // 封存區（展開時附在表尾，資料唯讀顯示、列功能照常）
   if(S.cf.showArch&&archAll.length){
@@ -2714,6 +2787,34 @@ function clientAutoColor(cid){
   return CLIENT_COLORS[h%CLIENT_COLORS.length];
 }
 function clientColor(cid){return S.clients?.[cid]?.color||clientAutoColor(cid);}
+// ── 專案（isProject）：一案多 invoice ──────────────────
+// 專案的各期請款：掃描 invoices 中 items.sourceCaseId 指向此案者
+function projectBilledParts(caseId){
+  const parts=[];
+  invoiceList().forEach(inv=>{
+    const amt=(inv.items||[]).filter(it=>it.sourceCaseId===caseId)
+      .reduce((s,it)=>s+(it.defaultPrice||0)*(it.qty==null?1:(it.qty||0)),0);
+    if(amt>0)parts.push({inv,amt});
+  });
+  return parts;
+}
+let _projClosed=new Set();
+function projToggleRows(id){_projClosed.has(id)?_projClosed.delete(id):_projClosed.add(id);renderCases();}
+// 附屬案件跟在（同組內的）主案件後面；專案主案件可折疊隱藏其附屬集
+function orderProjectChildren(items){
+  const ids=new Set(items.map(c=>c.id));
+  const kids={};
+  items.forEach(c=>{
+    if(c.linkedToCaseId&&ids.has(c.linkedToCaseId))(kids[c.linkedToCaseId]=kids[c.linkedToCaseId]||[]).push(c);
+  });
+  const out=[];
+  items.forEach(c=>{
+    if(c.linkedToCaseId&&ids.has(c.linkedToCaseId))return;
+    out.push(c);
+    if(!_projClosed.has(c.id))(kids[c.id]||[]).forEach(k=>out.push(k));
+  });
+  return out;
+}
 function clResetColor(){
   document.getElementById('cl-color-auto').value='1';
   document.getElementById('cl-color').value=S.editClientId?clientAutoColor(S.editClientId):'#4dd87a';
@@ -2754,7 +2855,20 @@ function caseRowHtml(c,childCounts,extraCls){
     }
     return`<tr class="${extraCls}" onclick="openEditCase('${c.id}')">
       <td style="border-left:4px solid ${clientColor(c.clientId)}"><span class="ep-num">${escHtml(clientName(c.clientId))}</span></td>
-      <td>${escHtml(c.title||'')}</td>
+      <td>${(()=>{
+        if(c.isProject){
+          const kidsAll=Object.values(S.cases||{}).filter(x=>x.linkedToCaseId===c.id);
+          const doneN=kidsAll.filter(x=>(x.status||'todo')==='done').length;
+          const parts=projectBilledParts(c.id).filter(p=>p.inv.status!=='draft');
+          const billed=parts.reduce((s,p)=>s+p.amt,0);
+          const contract=c.pricing?.amount||0;
+          const closed=_projClosed.has(c.id);
+          const bar=(pct,color)=>`<span style="display:inline-block;width:80px;height:7px;background:#e5efe8;border-radius:4px;overflow:hidden;vertical-align:middle"><i style="display:block;height:100%;width:${Math.min(100,pct)}%;background:${color}"></i></span>`;
+          return `<span onclick="event.stopPropagation();projToggleRows('${c.id}')" title="${closed?'展開':'收合'}附屬集" style="cursor:pointer;display:inline-block;width:15px;color:#1e6038;font-size:.66rem;transition:transform .15s;${closed?'transform:rotate(-90deg)':''}">▼</span><span style="background:#1e6038;color:#fff;border-radius:8px;padding:1px 7px;font-size:.62rem;font-weight:700;margin-right:5px">📦 專案</span><b>${escHtml(c.title||'')}</b>
+            <div style="font-size:.6rem;color:#888;margin:3px 0 0 15px">集數 ${bar(kidsAll.length?doneN/kidsAll.length*100:0,'#1e6038')} <b style="font-family:'JetBrains Mono',monospace">${doneN}/${kidsAll.length}</b>　收款 ${bar(contract?billed/contract*100:0,'#a86a00')} <b style="font-family:'JetBrains Mono',monospace">$${fmtMoney(billed)}</b><span style="font-family:'JetBrains Mono',monospace;color:#bbb"> / $${fmtMoney(contract)}</span></div>`;
+        }
+        return (c.linkedToCaseId?'<span style="color:#bbb">↳ </span>':'')+escHtml(c.title||'');
+      })()}</td>
       <td><span class="type-pill">${escHtml(c.type||'')}</span></td>
       <td onclick="event.stopPropagation()">
         <input type="date" class="case-date-input ${dateCls}" value="${escHtml(c.dueDate||'')}" onchange="updateCaseDate('${c.id}',this.value)" title="點擊修改交期">${dueBadge?`<div>${dueBadge}</div>`:''}
@@ -2776,6 +2890,11 @@ function caseRowHtml(c,childCounts,extraCls){
       </td>
       <td style="text-align:center" onclick="event.stopPropagation()">
         ${(()=>{
+          // 專案：一案多 invoice — 顯示期數徽章，點擊到金流頁專案卡操作
+          if(c.isProject){
+            const n=projectBilledParts(c.id).length;
+            return `<span class="invoiced-badge" style="background:var(--green-soft);color:#1e6038;border-color:var(--green-line)" onclick="switchTab('cashflow')" title="到金流頁的專案卡開請款/查各期狀態">🧾 ${n?n+' 期':'未請款'}</span>`;
+          }
           // 系統外已請款的歷史案件 → 灰色標記（點列可進編輯取消勾選）
           if(c.billedExternally){
             return `<span class="invoiced-badge" style="background:#f1eee6;color:#888;border-color:#e3e0d6" title="本系統建立前已請款的歷史案件 — 不列入預估／未請款／月結">🗂 外部已請款</span>`;
@@ -2952,6 +3071,7 @@ function openAddCase(){
   document.getElementById('f-billing-linked').checked=false;
   document.getElementById('f-linked-to').value='';
   document.getElementById('f-billed-external').checked=false;
+  document.getElementById('f-is-project').checked=false;
   refreshLinkedToOptions();
   onBillingModeChange();
   updateFShareVisibility();
@@ -3028,6 +3148,7 @@ function openEditCase(id){
   document.getElementById('f-share-studio').checked=c.shareWithStudio!==false;
   // billing-link state
   const isLinked=!!c.linkedToCaseId;
+  document.getElementById('f-is-project').checked=!!c.isProject;
   document.getElementById('f-billed-external').checked=!!c.billedExternally;
   document.getElementById('f-billing-independent').checked=!isLinked;
   document.getElementById('f-billing-linked').checked=isLinked;
@@ -3557,6 +3678,9 @@ function saveCase(){
     shareWithStudio:document.getElementById('f-share-studio').checked,
     pricing:{quotationItemId,amount:billingLinked?0:amount,addons:billingLinked?[]:_fAddons.filter(a=>a.qty>0).map(a=>({addonId:a.addonId,label:a.label,amount:a.amount,qty:a.qty}))},
     billedExternally:document.getElementById('f-billed-external').checked,
+    isProject:document.getElementById('f-is-project').checked,
+    // 專案支出在金流頁專案卡維護 — 表單儲存時必須保留（整包覆蓋）
+    projectExpenses:(S.editCaseId?(S.cases[S.editCaseId]?.projectExpenses??null):null),
     linkedToCaseId,
     invoiceId:existingInvoiceId,
     createdAt:S.editCaseId?S.cases[S.editCaseId]?.createdAt:Date.now(),
@@ -3565,7 +3689,7 @@ function saveCase(){
   saveCaseObj(c);
   // Sync amount change back to the linked invoice line (main line only — addons
   // still live as separate lines and match case.pricing.addons on Invoice regen)
-  if(!billingLinked)syncCaseAmountToInvoice(c);
+  if(!billingLinked&&!c.isProject)syncCaseAmountToInvoice(c);
   closeM('case-modal');
   toast(S.editCaseId?'已更新':'已新增');
 }
@@ -6347,7 +6471,8 @@ function refreshInvoiceCasePicker(){
     cs.status==='done' &&
     !cs.invoiceId &&
     !cs.billedExternally &&
-    !cs.linkedToCaseId
+    !cs.linkedToCaseId &&
+    !cs.isProject
   ).sort((a,b)=>(a.dueDate||'').localeCompare(b.dueDate||''));
   if(!cases.length){
     list.innerHTML=`<div style="padding:14px;text-align:center;color:#666;font-size:.72rem">此客戶沒有已完成且尚未開立 Invoice 的案件</div>`;
@@ -6942,6 +7067,7 @@ function getIacEligibleCases(){
     && !cs.invoiceId
     && !cs.billedExternally
     && !cs.linkedToCaseId
+    && !cs.isProject
   ).sort((a,b)=>(a.dueDate||'').localeCompare(b.dueDate||''));
 }
 function renderIacList(){
@@ -8168,6 +8294,197 @@ function renderArSchedule(){
     </div>
   </div>`;
 }
+// ── 專案總覽（金流頁）─────────────────────────────
+// 每月專案支出合計（按支出日期月份 → 計入該月損益）
+function projectExpensesForMonth(m){
+  let sum=0;
+  Object.values(S.cases||{}).forEach(c=>{
+    if(!c?.isProject)return;
+    (c.projectExpenses||[]).forEach(e=>{
+      if((e.date||'').slice(0,7)===m)sum+=parseInt(e.amount)||0;
+    });
+  });
+  return sum;
+}
+function renderProjectCards(){
+  const el=document.getElementById('cash-projects');if(!el)return;
+  const projs=Object.values(S.cases||{}).filter(c=>{
+    if(!c?.isProject)return false;
+    const parts=projectBilledParts(c.id);
+    const billed=parts.filter(p=>p.inv.status!=='draft').reduce((s,p)=>s+p.amt,0);
+    const wait=parts.filter(p=>p.inv.status==='sent').reduce((s,p)=>s+p.amt,0);
+    const remain=(c.pricing?.amount||0)-billed;
+    return (c.status||'todo')!=='done'||remain>0||wait>0;   // 完結且收清的專案不再顯示
+  });
+  if(!projs.length){el.innerHTML='';return;}
+  el.innerHTML='<div style="padding:0 14px 6px">'+projs.map(c=>{
+    const client=S.clients[c.clientId];
+    const contract=c.pricing?.amount||0;
+    const parts=projectBilledParts(c.id);
+    const live=parts.filter(p=>p.inv.status!=='draft');
+    const billed=live.reduce((s,p)=>s+p.amt,0);
+    const recv=live.filter(p=>p.inv.status==='paid').reduce((s,p)=>s+p.amt,0);
+    const wait=billed-recv;
+    const remain=Math.max(0,contract-billed);
+    const tax=live.reduce((s,p)=>s+(p.inv.taxExempt?Math.round(p.amt-p.amt/1.05):0),0);
+    const kids=Object.values(S.cases||{}).filter(x=>x.linkedToCaseId===c.id);
+    const doneN=kids.filter(x=>(x.status||'todo')==='done').length;
+    const out=kids.reduce((s,k)=>s+(k.isOutsourced?computeOutsourceCost(k):(k.cost||0)),0)
+             +(c.isOutsourced?computeOutsourceCost(c):(c.cost||0));
+    const exp=(c.projectExpenses||[]).reduce((s,e)=>s+(parseInt(e.amount)||0),0);
+    const netNow=billed-tax-out-exp;
+    const taxFull=(!client?.issuesReceipt&&contract)?Math.round(contract-contract/1.05):tax;
+    const netFull=contract-taxFull-out-exp;
+    const kpi=(l,v,vc,sub)=>`<div style="border:1px solid var(--line);border-radius:10px;padding:7px 12px;background:var(--paper)"><div style="font-size:.6rem;color:#666;font-weight:700">${l}</div><div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:.92rem;color:${vc||'#1a1a1a'}">${v}</div>${sub?`<div style="font-size:.58rem;color:#999">${sub}</div>`:''}</div>`;
+    const invRows=parts.map(p=>{
+      const inv=p.inv;
+      const dueN=(inv.dueDate||'').replace(/\//g,'-');
+      const dn=inv.status==='sent'&&dueN?dUntil(dueN):null;
+      const st=inv.status==='draft'?'<span class="due-badge" style="background:#f1eee6;color:#666">草稿未寄</span>'
+        :inv.status==='paid'?`<span class="due-badge" style="background:var(--green-soft);color:#1e6038">✅ 已入帳 ${escHtml((inv.paidDate||'').slice(5))}</span>`
+        :(dn!==null&&dn<0?`<span class="due-badge over">逾期 ${-dn} 天</span>`:`<span class="due-badge soon">應收 · 預計 ${escHtml((inv.dueDate||'—').slice(5))}</span>`);
+      return `<div class="cash-line" style="grid-template-columns:96px 1fr 150px 90px 70px;padding:5px 0">
+        <div class="num" style="text-align:left;font-weight:700;cursor:pointer" onclick="jumpToInvoice('${inv.id}')" title="開啟 Invoice">${escHtml(inv.invoiceNumber||'?')}</div>
+        <div style="font-size:.7rem">${escHtml(inv.stageLabel||'—')}</div>
+        <div style="text-align:right">${st}</div>
+        <div class="num" style="color:#1e6038;font-weight:700">$${fmtMoney(p.amt)}</div>
+        <div style="text-align:right">${inv.status==='sent'?`<button class="nav-btn primary" style="font-size:.6rem;padding:1px 7px" onclick="openInvPayModal('${inv.id}')">✓ 入帳</button>`:''}</div>
+      </div>`;
+    }).join('')||'<div style="font-size:.7rem;color:#999;padding:4px 0">尚未開過請款</div>';
+    const expRows=(c.projectExpenses||[]).map(e=>`<div class="cash-line" style="grid-template-columns:84px 1fr 130px 90px 30px;padding:5px 0">
+      <div><span class="type-pill">${escHtml(e.category||'其他')}</span></div>
+      <div style="font-size:.7rem">${escHtml(e.label||'（未命名）')}</div>
+      <div style="font-size:.62rem;color:#999;text-align:right">${escHtml(e.date||'—')}（計入 ${escHtml((e.date||'').slice(0,7).replace('-','/'))}）</div>
+      <div class="num" style="color:#c53030">-$${fmtMoney(e.amount||0)}</div>
+      <div style="text-align:right"><button class="act-btn del" style="padding:1px 4px;font-size:.66rem" onclick="delProjExp('${c.id}','${e.id}')">✕</button></div>
+    </div>`).join('')||'<div style="font-size:.7rem;color:#999;padding:4px 0">尚無支出</div>';
+    return `<div class="cash-row" style="cursor:default;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--green-soft);border-bottom:1px solid var(--green-line);flex-wrap:wrap">
+        <span style="background:#1e6038;color:#fff;border-radius:8px;padding:1px 8px;font-size:.64rem;font-weight:700">📦 專案</span>
+        <b style="font-size:.85rem;cursor:pointer" onclick="openEditCase('${c.id}')" title="編輯專案主案件">${escHtml(c.title||'')}</b>
+        <span style="font-size:.66rem;color:#666">${escHtml(client?.name||'?')} · 集數 ${doneN}/${kids.length} · 合約 <b class="num">$${fmtMoney(contract)}</b></span>
+        <span style="margin-left:auto"></span>
+        ${remain>0?`<button class="nav-btn primary" style="font-size:.68rem" onclick="openProjBill('${c.id}')">＋ 開請款</button>`:'<span class="due-badge" style="background:var(--green-soft);color:#1e6038;border:1px solid var(--green-line)">已全額請款</span>'}
+        <button class="nav-btn" style="font-size:.68rem;background:var(--amber-soft);border-color:var(--amber-line);color:var(--amber)" onclick="openProjExp('${c.id}')">＋ 支出</button>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;padding:10px 14px 4px">
+        ${kpi('已請款',`$${fmtMoney(billed)}`,null,`${live.length} 期${remain>0?' · 未請 $'+fmtMoney(remain):''}`)}
+        ${kpi('已入帳 / 應收',`$${fmtMoney(recv)}<span style="color:#a86a00;font-size:.74rem"> / $${fmtMoney(wait)}</span>`,'#1e6038')}
+        ${kpi('外包（各集）',out?'-$'+fmtMoney(out):'—','#c53030')}
+        ${kpi('專案支出',exp?'-$'+fmtMoney(exp):'—','#c53030')}
+        ${kpi('代繳稅（已請款）',tax?'-$'+fmtMoney(tax):'—','#c53030')}
+        ${kpi('專案淨額（實績）',`${netNow<0?'-':''}$${fmtMoney(Math.abs(netNow))}`,'#1e6038',`合約全額推估 $${fmtMoney(netFull)}`)}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:8px 14px 12px">
+        <div><div style="font-size:.64rem;font-weight:900;color:#1e6038;margin-bottom:3px">🧾 分期請款</div>${invRows}</div>
+        <div><div style="font-size:.64rem;font-weight:900;color:#a86a00;margin-bottom:3px">📦 專案支出（按支出日期入該月損益）</div>${expRows}</div>
+      </div>
+    </div>`;
+  }).join('')+'</div>';
+}
+// ── 開請款 ──
+let _projBillId=null,_projBillMode='full';
+function openProjBill(caseId){
+  const c=S.cases[caseId];if(!c)return;
+  _projBillId=caseId;
+  document.getElementById('pb-name').textContent=c.title||'';
+  setProjBillMode('full');
+  document.getElementById('pb-err').textContent='';
+  openM('proj-bill-modal');
+}
+function _projRemain(caseId){
+  const c=S.cases[caseId];
+  const billed=projectBilledParts(caseId).reduce((s,p)=>s+p.amt,0);   // 含草稿（避免重複開）
+  return Math.max(0,(c?.pricing?.amount||0)-billed);
+}
+function setProjBillMode(m){
+  _projBillMode=m;
+  const remain=_projRemain(_projBillId);
+  const c=S.cases[_projBillId];
+  document.getElementById('pb-info').innerHTML=`合約 <b class="num">$${fmtMoney(c?.pricing?.amount||0)}</b>・<span style="color:var(--amber)">剩餘可請 <b class="num">$${fmtMoney(remain)}</b></span>（含草稿）`;
+  document.getElementById('pb-seg-full').classList.toggle('active',m==='full');
+  document.getElementById('pb-seg-part').classList.toggle('active',m==='part');
+  const amtEl=document.getElementById('pb-amt');
+  amtEl.value=m==='full'?remain:'';
+  amtEl.disabled=m==='full';
+  document.getElementById('pb-label').value=m==='full'?(projectBilledParts(_projBillId).length?'尾款':'全額'):'';
+}
+function confirmProjBill(){
+  const cs=S.cases[_projBillId];if(!cs){closeM('proj-bill-modal');return;}
+  const amt=parseInt(document.getElementById('pb-amt').value)||0;
+  const label=document.getElementById('pb-label').value.trim()||`第 ${projectBilledParts(cs.id).length+1} 期`;
+  const remain=_projRemain(cs.id);
+  if(amt<=0){document.getElementById('pb-err').textContent='請填寫金額';return;}
+  if(amt>remain){document.getElementById('pb-err').textContent=`超過剩餘可請金額 $${fmtMoney(remain)}`;return;}
+  const client=S.clients[cs.clientId]||{};
+  const prefix=client.invoicePrefix||(client.name?client.name.charAt(0):'INV');
+  const now=new Date();
+  // 專案請款屬公司制：帳務月份最早從 COMPANY_ERA 起算（避免落入分潤制月份）
+  let billingMonth=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  if(billingMonth<COMPANY_ERA)billingMonth=COMPANY_ERA;
+  const due=new Date();due.setDate(due.getDate()+30);
+  const inv={
+    id:uid(),
+    invoiceNumber:nextInvoiceNumber(prefix,billingMonth),
+    clientId:cs.clientId,
+    billingMonth,
+    stageLabel:label,
+    issuedAt:Date.now(),
+    issuedDate:`${now.getFullYear()}/${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')}`,
+    dueDate:`${due.getFullYear()}/${String(due.getMonth()+1).padStart(2,'0')}/${String(due.getDate()).padStart(2,'0')}`,
+    status:'draft',
+    items:[{itemId:uid(),sourceCaseId:cs.id,sourceWorkItemId:null,label:`${cs.title||''} — ${label}`,serviceLabel:'專案請款',category:cs.type||'專案',defaultPrice:amt,qty:1,unit:'式'}],
+    taxRate:client.issuesReceipt?5:0,
+    taxExempt:!client.issuesReceipt,
+    discount:0,serviceNotes:'',terms:'',showSignature:false,
+    createdAt:Date.now(),updatedAt:Date.now(),
+    sourceCaseIds:[cs.id],
+  };
+  inv.total=calcInvoiceTotal(inv).total;
+  S.invoices[inv.id]=inv;  // optimistic — Firebase echo 會晚一步
+  saveInvoiceObj(inv);
+  closeM('proj-bill-modal');
+  toast(`已建立 ${inv.invoiceNumber}（${label} · 草稿）— 請至 Invoice 檢查後寄出`);
+  jumpToInvoice(inv.id);
+}
+// ── 專案支出 ──
+let _projExpId=null;
+function openProjExp(caseId){
+  const c=S.cases[caseId];if(!c)return;
+  _projExpId=caseId;
+  document.getElementById('pe-name').textContent=c.title||'';
+  document.getElementById('pe-label').value='';
+  document.getElementById('pe-amt').value='';
+  const d=new Date();
+  document.getElementById('pe-date').value=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  document.getElementById('pe-err').textContent='';
+  openM('proj-exp-modal');
+}
+function confirmProjExp(){
+  const c=S.cases[_projExpId];if(!c){closeM('proj-exp-modal');return;}
+  const amt=parseInt(document.getElementById('pe-amt').value)||0;
+  const date=document.getElementById('pe-date').value;
+  if(amt<=0||!date){document.getElementById('pe-err').textContent='請填寫金額與支出日期';return;}
+  c.projectExpenses=c.projectExpenses||[];
+  c.projectExpenses.push({id:uid(),category:document.getElementById('pe-cat').value,
+    label:document.getElementById('pe-label').value.trim(),amount:amt,date});
+  c.updatedAt=Date.now();
+  saveCaseObj(c);
+  closeM('proj-exp-modal');
+  renderCashflow();
+  toast('已加入專案支出');
+}
+function delProjExp(caseId,expId){
+  const c=S.cases[caseId];if(!c)return;
+  const e=(c.projectExpenses||[]).find(x=>x.id===expId);
+  showConf('刪除專案支出？',`「${e?.label||e?.category||''} -$${fmtMoney(e?.amount||0)}」將自專案移除。`,()=>{
+    c.projectExpenses=(c.projectExpenses||[]).filter(x=>x.id!==expId);
+    c.updatedAt=Date.now();
+    saveCaseObj(c);
+    renderCashflow();
+  });
+}
+
 // ── 公司制月份區塊（月損益 + 薪資 + invoice 列）──
 function renderCompanyMonthSection(month,invs){
   let sub=0,tax=0,cost=0,net=0,exp=0,recvAmt=0,sentAmt=0,recvN=0,sentN=0;
@@ -8179,7 +8496,8 @@ function renderCompanyMonthSection(month,invs){
   });
   const sal=monthSalary(month);
   const salTotal=sal.reduce((s,x)=>s+(x.amount||0),0);
-  const profit=net-salTotal;
+  const projExp=projectExpensesForMonth(month);
+  const profit=net-salTotal-projExp;
   const pill=(cls,k,vHtml,uHtml='',style='')=>`<div class="cash-month-pill ${cls}" style="${style}"><div class="k">${k}</div><div class="v">${vHtml}</div>${uHtml}</div>`;
   const monthPretty=month.replace('-',' / ');
   return `<section class="cash-month">
@@ -8191,7 +8509,7 @@ function renderCompanyMonthSection(month,invs){
       <div class="cmh-pills">
         ${pill('recv','已收',`$${fmtMoney(recvAmt)}`,`<div class="u" style="color:#666">${recvN} 張</div>`)}
         ${pill('pend','應收',`$${fmtMoney(sentAmt)}`,`<div class="u" style="color:#666">${sentN} 張</div>`)}
-        ${pill('','外包＋支出',`-$${fmtMoney(cost+exp)}`,'','background:#fde8e8;border-color:#e8aaaa;color:#c53030')}
+        ${pill('','外包＋支出',`-$${fmtMoney(cost+exp+projExp)}`,projExp?`<div class="u" style="color:#666">含專案支出 $${fmtMoney(projExp)}</div>`:'','background:#fde8e8;border-color:#e8aaaa;color:#c53030')}
         ${pill('','薪資',`-$${fmtMoney(salTotal)}`,`<div class="u" style="color:#666">${sal.filter(x=>x.pay?.paid).length}/${sal.length} 已發</div>`,'background:#fde8e8;border-color:#e8aaaa')}
         ${pill('','代繳稅',`-$${fmtMoney(tax)}`,'','background:#f1eee6;border-color:#e3e0d6')}
         ${pill('',profit>=0?'當月淨利':'當月虧損',`${profit>=0?'':'-'}$${fmtMoney(Math.abs(profit))}`,'',profit>=0?'background:#e8f5ec;border-color:#7de89a;color:#1e6038':'background:#fde8e8;border-color:#e8aaaa;color:#c53030')}
@@ -8374,8 +8692,9 @@ function renderCashflow(){
       <div class="sub">已從淨額扣除</div>
     </div>`:''}
   `;
-  // 入帳時程（跨月應收）+ 應付外包款
+  // 入帳時程（跨月應收）+ 專案總覽 + 應付外包款
   renderArSchedule();
+  renderProjectCards();
   renderOutsourcePayables();
   // Render invoice rows
   if(!invs.length){list.innerHTML='';empty.style.display='flex';return;}
@@ -8849,6 +9168,18 @@ function computeForecast(){
   Object.values(S.cases||{}).forEach(cs=>{
     if(!cs||cs.linkedToCaseId)return;
     if(cs.billedExternally)return;  // 系統外已請款的歷史案件 — 不列入預估
+    if(cs.isProject){
+      // 專案：已請款各期由 A（待收）處理；這裡只列「未請款餘額」
+      const pBilled=projectBilledParts(cs.id).filter(p=>p.inv.status!=='draft').reduce((s,p)=>s+p.amt,0);
+      const pRem=(cs.pricing?.amount||0)-pBilled;
+      const pYm=(cs.dueDate||'').slice(0,7);
+      if(pRem>0){
+        const pName=S.clients[cs.clientId]?.name||'?';
+        buckets.get(keyFor(pYm)).inflows.push({tier:(cs.status||'todo')==='done'?'B':'C',caseId:cs.id,label:`${cs.title||''}（未請款餘額）｜${pName}`,date:cs.dueDate||'',amt:pRem,click:`openEditCase('${cs.id}')`});
+        addStudio(keyFor(pYm),'e',pRem);  // 公司制粗估：全額歸公司（不預扣外包/支出）
+      }
+      return;
+    }
     if(resolveCaseInvoice(cs))return;  // 已真實掛在 invoice 上 → 由 A/L 處理
     const amt=cs.pricing?.amount||0;
     const ym=(cs.dueDate||'').slice(0,7);
