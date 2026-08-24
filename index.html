@@ -8175,7 +8175,8 @@ function computeMonthlyAgg(invs){
 // 入公司帳、齊/巫為薪資支出、不再分潤）；以前 → 現行分潤檢視，
 // 歷史數字完全不重算。computeInvoiceSplit 保留給歷史月份。
 // ═══════════════════════════════════════════════════
-const COMPANY_ERA='2026-08';
+const COMPANY_ERA='2026-08';   // 公司制檢視起始（8 月為測試月）
+const SALARY_ERA='2026-09';    // 薪資起算月 — 8 月測試月不帶入薪資
 function isCompanyMonth(m){return !!m&&m>=COMPANY_ERA;}
 function salaryConfig(){
   const s=S.globalSettings?.salaries||{};
@@ -8494,7 +8495,8 @@ function renderCompanyMonthSection(month,invs){
     if(inv.status==='paid'){recvAmt+=inv.total||0;recvN++;}
     else{sentAmt+=inv.total||0;sentN++;}
   });
-  const sal=monthSalary(month);
+  const salaryOn=month>=SALARY_ERA;
+  const sal=salaryOn?monthSalary(month):[];
   const salTotal=sal.reduce((s,x)=>s+(x.amount||0),0);
   const projExp=projectExpensesForMonth(month);
   const profit=net-salTotal-projExp;
@@ -8510,13 +8512,13 @@ function renderCompanyMonthSection(month,invs){
         ${pill('recv','已收',`$${fmtMoney(recvAmt)}`,`<div class="u" style="color:#666">${recvN} 張</div>`)}
         ${pill('pend','應收',`$${fmtMoney(sentAmt)}`,`<div class="u" style="color:#666">${sentN} 張</div>`)}
         ${pill('','外包＋支出',`-$${fmtMoney(cost+exp+projExp)}`,projExp?`<div class="u" style="color:#666">含專案支出 $${fmtMoney(projExp)}</div>`:'','background:#fde8e8;border-color:#e8aaaa;color:#c53030')}
-        ${pill('','薪資',`-$${fmtMoney(salTotal)}`,`<div class="u" style="color:#666">${sal.filter(x=>x.pay?.paid).length}/${sal.length} 已發</div>`,'background:#fde8e8;border-color:#e8aaaa')}
+        ${salaryOn?pill('','薪資',`-$${fmtMoney(salTotal)}`,`<div class="u" style="color:#666">${sal.filter(x=>x.pay?.paid).length}/${sal.length} 已發</div>`,'background:#fde8e8;border-color:#e8aaaa'):pill('','薪資',`—`,'<div class="u" style="color:#666">測試月不計</div>','background:#f1eee6;border-color:#e3e0d6')}
         ${pill('','代繳稅',`-$${fmtMoney(tax)}`,'','background:#f1eee6;border-color:#e3e0d6')}
         ${pill('',profit>=0?'當月淨利':'當月虧損',`${profit>=0?'':'-'}$${fmtMoney(Math.abs(profit))}`,'',profit>=0?'background:#e8f5ec;border-color:#7de89a;color:#1e6038':'background:#fde8e8;border-color:#e8aaaa;color:#c53030')}
       </div>
       <div style="font-size:.6rem;color:#888">按請款月（權責）：收入 − 稅 − 外包 − 專案支出 − 薪資 ＝ 淨利；收入全數入公司帳，不分潤</div>
     </div>
-    ${renderSalaryBlock(month,sal)}
+    ${salaryOn?renderSalaryBlock(month,sal):''}
     <div>${invs.map(renderCashInvoiceRowCompany).join('')}</div>
   </section>`;
 }
@@ -8723,7 +8725,7 @@ function renderCashflow(){
     ).join('');
   }else{
     // 指定公司制月份時：薪資區塊置頂
-    const salBlock=(monthSel!=='all'&&isCompanyMonth(monthSel))?renderSalaryBlock(monthSel):'';
+    const salBlock=(monthSel!=='all'&&monthSel>=SALARY_ERA)?renderSalaryBlock(monthSel):'';
     list.innerHTML=salBlock+invs.map(renderCashInvoiceRow).join('');
   }
 }
@@ -9214,7 +9216,7 @@ function computeForecast(){
     }
   });
   // SAL: 公司制月份的薪資支出（未發的列入該月）
-  monthKeys.filter(isCompanyMonth).forEach(m=>{
+  monthKeys.filter(m=>m>=SALARY_ERA).forEach(m=>{
     monthSalary(m).forEach(x=>{
       if(x.amount>0&&!x.pay?.paid){
         buckets.get(m).outflows.push({tier:'SAL',who:x.name,label:`${x.name} 薪資｜${m.replace('-','/')}`,date:'',amt:x.amount,click:`switchTab('cashflow')`});
