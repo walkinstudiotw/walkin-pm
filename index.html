@@ -1478,15 +1478,9 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
       </div>
     </div>
 
-    <div class="cl-section">
-      <div class="cl-section-title">💸 預設分潤設定（新案件帶入）</div>
-      <div style="display:flex;gap:14px;font-size:.78rem;align-items:center;flex-wrap:wrap">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-          <input type="checkbox" id="cl-share-studio" style="accent-color:#a86a00" checked>
-          <span>新增此客戶的案件時，預設與工作室分潤（房子拿 30%）</span>
-        </label>
-        <span style="font-size:.62rem;color:#888;line-height:1.5">取消勾選 → 新案件預設「不分潤」，負責人拿 100%（仍可在單一案件覆寫）</span>
-      </div>
+    <!-- 預設分潤設定已移除（2026-08 公司化後不再分潤；client.defaultShareWithStudio 資料欄保留，
+         歷史月份分潤讀的是案件上已存的設定，不受影響） -->
+    <div class="cl-section" style="display:none">
     </div>
 
     <div class="modal-btns">
@@ -3936,7 +3930,8 @@ function saveClient(){
     accountInfo:document.getElementById('cl-account').value.trim(),
     invoicePrefix:(document.getElementById('cl-invoice-prefix')?.value||'').trim().toUpperCase(),
     invoiceEmail:(document.getElementById('cl-invoice-email')?.value||'').trim(),
-    defaultShareWithStudio:document.getElementById('cl-share-studio')?.checked!==false,
+    // UI 已移除（公司化）；保留既有值不覆寫，歷史資料原樣
+    defaultShareWithStudio:existing.defaultShareWithStudio!==false,
     issuesReceipt:!!document.getElementById('cl-issues-receipt')?.checked,
     isOneTime:!!document.getElementById('cl-one-time')?.checked,
     // 自訂節目顏色；「自動配色」存 null（Firebase set 時會移除該欄位）
