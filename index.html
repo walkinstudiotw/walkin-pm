@@ -774,6 +774,7 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
         <div class="sb-item" data-tab="invoices"><span class="ico">🧾</span>Invoice</div>
         <div class="sb-item" data-tab="cashflow"><span class="ico">💵</span>金流</div>
         <div class="sb-item" data-tab="forecast"><span class="ico">📈</span>預估</div>
+        <div class="sb-item" data-tab="assessment"><span class="ico">📊</span>專案管理</div>
       </div>
     </div>
     <div class="sb-bottom">
@@ -1012,6 +1013,15 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
 </div>
 
 <!-- TAB: FORECAST -->
+<div class="tab-panel" id="tab-assessment">
+  <div class="scroll-body">
+    <div id="as-root" style="padding:14px">
+      <div id="as-breakeven"></div>
+      <div id="as-body"></div>
+    </div>
+  </div>
+</div>
+
 <div class="tab-panel" id="tab-forecast">
   <div class="scroll-body">
     <div class="cash-summary" id="fc-summary"></div>
@@ -1724,6 +1734,33 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
   </div>
 </div>
 
+<!-- 記工時 MODAL（專案管理頁） -->
+<div class="modal-overlay" id="as-hours-modal">
+  <div class="modal" style="width:380px">
+    <div class="modal-title">⏱ 記工時</div>
+    <div id="ash-who" style="font-size:.76rem;color:#666"></div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">日期</label>
+        <input class="form-input" type="date" id="ash-date" style="font-family:'JetBrains Mono',monospace">
+      </div>
+      <div class="form-group">
+        <label class="form-label">小時（人時，可小數；兩人同做 1.5h 記 3）</label>
+        <input class="form-input" type="number" step="0.5" id="ash-hours" inputmode="decimal" style="font-family:'JetBrains Mono',monospace">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">做了什麼（選填 — 開會/改稿/催款等隱形工時也記）</label>
+      <input class="form-input" id="ash-note" placeholder="例：EP54 粗剪／改稿第 2 輪">
+    </div>
+    <div id="ash-err" style="font-size:.66rem;color:#c53030;min-height:15px"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeM('as-hours-modal')">取消</button>
+      <button class="btn-primary" onclick="confirmAsHours()">加入</button>
+    </div>
+  </div>
+</div>
+
 <!-- OUTSOURCER CASES MODAL -->
 <div class="modal-overlay" id="os-cases-modal">
   <div class="modal modal-lg">
@@ -2368,7 +2405,7 @@ function _renderBlocked(){
   if(document.querySelector('.modal-overlay.open'))return true;
   const ae=document.activeElement;
   return !!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)
-    &&ae.closest('#cases-tbody,#clients-grid,#wi-tbody,#inv-list,#inv-editor-wrap,#inv-preview-wrap,#cash-list,#cash-summary,#fc-list,#outsourcers-grid,#quote-main'));
+    &&ae.closest('#cases-tbody,#clients-grid,#wi-tbody,#inv-list,#inv-editor-wrap,#inv-preview-wrap,#cash-list,#cash-summary,#fc-list,#outsourcers-grid,#quote-main,#as-root'));
 }
 function _flushPendingRender(){
   if(_pendingRender&&!_renderBlocked()){_pendingRender=false;renderCurrentTab();}
@@ -2422,6 +2459,7 @@ const TAB_META={
   invoices:{ico:'🧾',label:'Invoice',addBtn:null},
   cashflow:{ico:'💵',label:'金流',addBtn:null},
   forecast:{ico:'📈',label:'預估',addBtn:null},
+  assessment:{ico:'📊',label:'專案管理（體檢）',addBtn:null},
 };
 // ── MOBILE SIDEBAR DRAWER ──
 function toggleMobileSidebar(){document.body.classList.toggle('sb-open');}
@@ -2474,6 +2512,7 @@ function renderCurrentTab(){
   else if(n==='invoices')renderInvoices();
   else if(n==='cashflow')renderCashflow();
   else if(n==='forecast')renderForecast();
+  else if(n==='assessment')renderAssessment();
   else if(n==='outsourcers')renderOutsourcers();
 }
 document.querySelectorAll('.sb-item[data-tab]').forEach(t=>t.addEventListener('click',()=>switchTab(t.dataset.tab)));
@@ -3676,6 +3715,9 @@ function saveCase(){
     isProject:document.getElementById('f-is-project').checked,
     // 專案支出在金流頁專案卡維護 — 表單儲存時必須保留（整包覆蓋）
     projectExpenses:(S.editCaseId?(S.cases[S.editCaseId]?.projectExpenses??null):null),
+    // 工時 log 與體檢標記在「專案管理」頁維護 — 一樣保留
+    timeLogs:(S.editCaseId?(S.cases[S.editCaseId]?.timeLogs??null):null),
+    assessment:(S.editCaseId?(S.cases[S.editCaseId]?.assessment??null):null),
     linkedToCaseId,
     invoiceId:existingInvoiceId,
     createdAt:S.editCaseId?S.cases[S.editCaseId]?.createdAt:Date.now(),
@@ -8165,6 +8207,209 @@ function computeMonthlyAgg(invs){
   });
   return a;
 }
+// ═══════════════════════════════════════════════════
+// ── 專案管理（體檢）— 工時 → 真實時薪 → 四象限 ────────
+// 依「公司化前的案件體檢」框架：真實時薪＝(收入−直接成本)÷實際工時；
+// 收入/成本自動帶入（invoices/外包/專案支出），工時與 A/B/C 手動。
+// 工時＝人時（兩人同做 1.5h 記 3h）；損益兩平採全員合計口徑。
+// ═══════════════════════════════════════════════════
+const BE_DEFAULT={fixed:600000,salary:1800000,tax:400000,margin:15,hours:3600,rate:60};
+const AS_MOODS=['😍','😐','😤'];
+const AS_Q={engine:{n:'引擎',bg:'#1e6038',fg:'#fff'},sign:{n:'招牌',bg:'var(--amber-soft)',fg:'var(--amber)'},
+            base:{n:'基本盤',bg:'#f1eee6',fg:'#666'},cut:{n:'收掉',bg:'#c53030',fg:'#fff'}};
+let _asOpen=new Set();
+function asBreakeven(){
+  const b=Object.assign({},BE_DEFAULT,S.globalSettings?.breakeven||{});
+  const target=(b.fixed+b.salary+b.tax)/(1-(b.margin||0)/100);
+  const hrs=b.hours*(b.rate||0)/100;
+  return {cfg:b,target,hrs,floor:hrs?target/hrs:0};
+}
+function asSaveBreakeven(){
+  if(!_fbReady)return;
+  const g=id=>parseFloat(document.getElementById(id).value)||0;
+  const cfg={fixed:g('be-fixed'),salary:g('be-salary'),tax:g('be-tax'),
+             margin:g('be-margin'),hours:g('be-hours'),rate:g('be-rate')};
+  S.globalSettings=S.globalSettings||{};S.globalSettings.breakeven=cfg;  // optimistic
+  _db.ref(`${ROOT}/settings/breakeven`).set(_stampBy(cfg));
+  renderAssessment();
+}
+function asCaseHours(c){return (c.timeLogs||[]).reduce((s,l)=>s+(parseFloat(l.hours)||0),0);}
+// 一列的完整數字（專案含附屬集工時/外包＋專案支出）
+function asRowData(c){
+  const kids=c.isProject?Object.values(S.cases||{}).filter(x=>x.linkedToCaseId===c.id):[];
+  const hours=asCaseHours(c)+kids.reduce((s,k)=>s+asCaseHours(k),0);
+  const ownCost=c.isOutsourced?computeOutsourceCost(c):(c.cost||0);
+  const cost=ownCost
+    +kids.reduce((s,k)=>s+(k.isOutsourced?computeOutsourceCost(k):(k.cost||0)),0)
+    +(c.projectExpenses||[]).reduce((s,e)=>s+(parseInt(e.amount)||0),0);
+  const parts=projectBilledParts(c.id).filter(p=>p.inv.status!=='draft');
+  const billed=parts.reduce((s,p)=>s+p.amt,0);
+  const rev=billed||(c.pricing?.amount||0);
+  const revEst=!billed;
+  const gross=rev-cost;
+  const rate=hours>0?gross/hours:null;
+  return {kids,hours,cost,rev,revEst,gross,rate};
+}
+function asQuadrant(d,repl,floorRate){
+  if(d.rate===null)return null;
+  const hi=d.rate>=floorRate;
+  const rp=(repl||'B')!=='C';
+  return hi?(rp?'engine':'sign'):(rp?'base':'cut');
+}
+function asCases(){
+  const cutoff=new Date();cutoff.setDate(cutoff.getDate()-365);
+  const cy=`${cutoff.getFullYear()}-${String(cutoff.getMonth()+1).padStart(2,'0')}-${String(cutoff.getDate()).padStart(2,'0')}`;
+  return Object.values(S.cases||{})
+    .filter(c=>c&&!c.linkedToCaseId&&((c.status||'todo')!=='done'||(c.dueDate||'')>=cy))
+    .sort((a,b)=>(b.dueDate||'').localeCompare(a.dueDate||''));
+}
+function renderAssessment(){
+  const be=document.getElementById('as-breakeven');
+  const body=document.getElementById('as-body');
+  if(!be||!body)return;
+  const B=asBreakeven();
+  const fld=(id,label,val)=>`<div style="display:flex;flex-direction:column;gap:3px">
+    <label style="font-size:.62rem;font-weight:700;color:#666">${label}</label>
+    <input class="form-input" id="${id}" type="number" value="${val}" onchange="asSaveBreakeven()" style="width:120px;font-family:'JetBrains Mono',monospace"></div>`;
+  be.innerHTML=`<div class="cash-row" style="cursor:default;margin-bottom:14px">
+    <div style="padding:10px 14px 4px;font-size:.78rem;font-weight:900;color:#1e6038">⚖️ 損益兩平時薪（地板價）
+      <span style="font-weight:400;font-size:.64rem;color:#888">— 薪資與工時用「全員合計」；工時記錄＝人時（兩人同做 1.5h 記 3h）</span></div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;padding:8px 14px 14px">
+      ${fld('be-fixed','年固定成本',B.cfg.fixed)}
+      ${fld('be-salary','員工年薪合計（齊＋巫）',B.cfg.salary)}
+      ${fld('be-tax','稅務勞健保準備',B.cfg.tax)}
+      ${fld('be-margin','目標淨利率 %',B.cfg.margin)}
+      ${fld('be-hours','全年工時（全員合計）',B.cfg.hours)}
+      ${fld('be-rate','計費率 %',B.cfg.rate)}
+      <div style="margin-left:auto;background:var(--green-soft);border:1px solid var(--green-line);border-radius:10px;padding:8px 16px;text-align:right">
+        <div style="font-size:.6rem;font-weight:700;color:#666">損益兩平時薪</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:1.3rem;font-weight:700;color:#1e6038">$${fmtMoney(Math.round(B.floor))}/h</div>
+        <div style="font-size:.58rem;color:#888">目標年營收 $${fmtMoney(Math.round(B.target))} ÷ 可計費 ${fmtMoney(Math.round(B.hrs))}h</div>
+      </div>
+    </div>
+  </div>`;
+  // 體檢表
+  const list=asCases();
+  let rows=`<tr><th style="width:16px"></th><th>案件</th><th class="r" style="width:86px">收入</th><th class="r" style="width:80px">成本</th><th class="r" style="width:86px">毛利</th><th class="r" style="width:76px">實際工時</th><th class="r" style="width:96px">真實時薪</th><th style="width:96px">可複製性</th><th style="width:42px">情緒</th><th style="width:72px">象限</th><th style="width:92px"></th></tr>`;
+  const cells={engine:[],sign:[],base:[],cut:[]};
+  list.forEach(c=>{
+    const d=asRowData(c);
+    const a=c.assessment||{};
+    const q=asQuadrant(d,a.repl,B.floor);
+    if(q)cells[q].push({c,d});
+    const open=_asOpen.has(c.id);
+    const qBadge=q?`<span style="border-radius:8px;padding:1px 8px;font-size:.62rem;font-weight:700;background:${AS_Q[q].bg};color:${AS_Q[q].fg};border:1px solid var(--line)">${AS_Q[q].n}</span>`:'<span class="muted" style="font-size:.62rem">記工時後判定</span>';
+    rows+=`<tr style="cursor:pointer" onclick="_asOpen.has('${c.id}')?_asOpen.delete('${c.id}'):_asOpen.add('${c.id}');renderAssessment()">
+      <td style="border-left:4px solid ${clientColor(c.clientId)}"><span style="display:inline-block;width:12px;color:#999;font-size:.6rem;transition:transform .15s;${open?'':'transform:rotate(-90deg)'}">▼</span></td>
+      <td>${c.isProject?'<span style="background:#1e6038;color:#fff;border-radius:8px;padding:0 6px;font-size:.58rem;font-weight:700;margin-right:4px">📦</span>':''}<b style="font-size:.78rem">${escHtml(c.title||'')}</b>
+        <div style="font-size:.6rem;color:#999">${escHtml(clientName(c.clientId))} · ${STATUS_LABEL[c.status||'todo']||''}${d.kids.length?` · ${d.kids.filter(k=>(k.status||'todo')==='done').length}/${d.kids.length} 集`:''}</div></td>
+      <td class="r" style="color:var(--green)" ${d.revEst?'title="尚未請款 — 以案件金額預估"':''}>$${fmtMoney(d.rev)}${d.revEst?'<span style="color:#a86a00">°</span>':''}</td>
+      <td class="r" style="color:${d.cost?'#c53030':'#bbb'}">${d.cost?'-$'+fmtMoney(d.cost):'—'}</td>
+      <td class="r">$${fmtMoney(d.gross)}</td>
+      <td class="r"><b>${(Math.round(d.hours*10)/10).toLocaleString()}</b> h</td>
+      <td class="r" style="font-weight:700;color:${d.rate===null?'#bbb':(d.rate>=B.floor?'#1e6038':'#c53030')}">${d.rate===null?'—':'$'+fmtMoney(Math.round(d.rate))+'/h'}</td>
+      <td onclick="event.stopPropagation()"><span style="display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden">${['A','B','C'].map(r=>{
+        const on=a.repl===r;
+        const col=r==='A'?'#1e6038':(r==='B'?'#a86a00':'#c53030');
+        const bg=r==='A'?'var(--green-soft)':(r==='B'?'var(--amber-soft)':'var(--red-soft)');
+        return `<button style="border:0;background:${on?bg:'#fff'};color:${on?col:'#ccc'};padding:2px 8px;font-size:.66rem;font-weight:700;cursor:pointer;font-family:'JetBrains Mono',monospace" onclick="asSetRepl('${c.id}','${r}')" title="A=可交付 B=半可交付 C=只能自己做">${r}</button>`;}).join('')}</span></td>
+      <td onclick="event.stopPropagation()"><span style="cursor:pointer;font-size:.95rem" onclick="asCycleMood('${c.id}')" title="想再做嗎？點擊切換">${a.mood||'😐'}</span></td>
+      <td>${qBadge}</td>
+      <td onclick="event.stopPropagation()"><button class="nav-btn primary" style="font-size:.62rem;padding:2px 8px" onclick="openAsHours('${c.id}')">⏱ 記工時</button></td>
+    </tr>`;
+    if(open){
+      const logs=(c.timeLogs||[]).slice().sort((x,y)=>(y.date||'').localeCompare(x.date||''));
+      if(!logs.length)rows+=`<tr><td></td><td colspan="10" style="background:#fbfaf6;font-size:.66rem;color:#999;padding:6px 10px">尚無工時紀錄 — 按「⏱ 記工時」開始（隱形工時：開會/改稿/催款也記進來）</td></tr>`;
+      logs.forEach(l=>{
+        rows+=`<tr><td></td><td colspan="4" style="background:#fbfaf6;font-size:.68rem;color:#666;padding:4px 10px 4px 26px">· ${escHtml(l.date||'—')}　${escHtml(l.note||'—')}</td>
+          <td class="r" style="background:#fbfaf6;font-family:'JetBrains Mono',monospace;font-size:.68rem">${(Math.round((parseFloat(l.hours)||0)*10)/10)} h</td>
+          <td colspan="4" style="background:#fbfaf6"></td>
+          <td style="background:#fbfaf6" onclick="event.stopPropagation()"><button class="act-btn del" style="padding:0 4px;font-size:.62rem" onclick="delAsLog('${c.id}','${l.id}')">✕</button></td></tr>`;
+      });
+      if(c.isProject&&d.kids.length){
+        const kidHours=d.kids.reduce((s,k)=>s+asCaseHours(k),0);
+        if(kidHours>0)rows+=`<tr><td></td><td colspan="10" style="background:#fbfaf6;font-size:.62rem;color:#999;padding:4px 10px 4px 26px">＋ 附屬集工時 ${(Math.round(kidHours*10)/10)} h（已計入合計）</td></tr>`;
+      }
+    }
+  });
+  // 四象限
+  const chip=x=>`<span onclick="_asOpen.add('${x.c.id}');renderAssessment();document.getElementById('as-body').scrollIntoView()" style="display:inline-flex;align-items:center;gap:5px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:2px 10px;font-size:.66rem;font-weight:700;cursor:pointer;margin:2px 4px 2px 0">
+    <span style="width:7px;height:7px;border-radius:50%;background:${clientColor(x.c.clientId)}"></span>${escHtml((x.c.title||'').slice(0,14))}<span style="font-family:'JetBrains Mono',monospace;color:#888;font-weight:400">$${fmtMoney(Math.round(x.d.rate))}/h</span></span>`;
+  const cell=(k,tag,act,extra)=>`<div style="background:${k==='engine'?'var(--green-soft)':(k==='cut'?'var(--red-soft)':'#fff')};padding:12px 14px;min-height:96px">
+    <div style="font-size:.58rem;color:#999;font-weight:700">${tag}</div>
+    <h4 style="font-size:.82rem;font-weight:900;color:${k==='engine'?'#1e6038':(k==='sign'?'#a86a00':(k==='cut'?'#c53030':'#666'))};margin:1px 0 2px">${AS_Q[k].n}</h4>
+    <div style="font-size:.64rem;color:#666;margin-bottom:6px">${act}</div>
+    ${cells[k].map(chip).join('')||'<span style="font-size:.64rem;color:#bbb">（無）</span>'}</div>`;
+  body.innerHTML=`<div class="cash-row" style="cursor:default;margin-bottom:14px">
+    <div style="padding:10px 14px 6px;font-size:.78rem;font-weight:900;color:#1e6038">🩺 案件體檢
+      <span style="font-weight:400;font-size:.64rem;color:#888">— 近 12 個月＋進行中；收入°＝尚未請款（以案件金額預估）；點列展開工時 log</span></div>
+    <div class="scrollx" style="overflow-x:auto"><table class="tbl" style="min-width:980px">${rows}</table></div>
+  </div>
+  <div class="cash-row" style="cursor:default">
+    <div style="padding:10px 14px 6px;font-size:.78rem;font-weight:900;color:#1e6038">🧭 四象限
+      <span style="font-weight:400;font-size:.64rem;color:#888">— 真實時薪 vs 地板 × 可複製性（A/B＝可複製、C＝只能自己做）；點案件跳回表格</span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border-top:1px solid var(--line-soft)">
+      ${cell('engine','高時薪 × 可複製','優先擴張：包成方案、寫 SOP、招人。公司的營收基礎。')}
+      ${cell('sign','高時薪 × 只能自己做','定位與作品集用，設產能上限，避免吃掉建系統的時間。')}
+      ${cell('base','低時薪 × 可複製','現金流但在賠時間：漲價／拆工序外包／設退場時點，三選一。')}
+      ${cell('cut','低時薪 × 只能自己做','做完手上這檔就結束，不再承接。它吃的是建立制度的注意力。')}
+    </div>
+    <div style="display:flex;justify-content:space-between;padding:5px 14px;font-size:.6rem;color:#999"><span>← 可複製（A/B）</span><span>只能自己做（C）→</span></div>
+  </div>`;
+}
+function asSetRepl(id,r){
+  const c=S.cases[id];if(!c)return;
+  c.assessment=c.assessment||{};
+  c.assessment.repl=r;
+  c.updatedAt=Date.now();
+  saveCaseObj(c);
+  renderAssessment();
+}
+function asCycleMood(id){
+  const c=S.cases[id];if(!c)return;
+  c.assessment=c.assessment||{};
+  c.assessment.mood=AS_MOODS[(AS_MOODS.indexOf(c.assessment.mood||'😐')+1)%AS_MOODS.length];
+  c.updatedAt=Date.now();
+  saveCaseObj(c);
+  renderAssessment();
+}
+let _asHoursTarget=null;
+function openAsHours(id){
+  const c=S.cases[id];if(!c)return;
+  _asHoursTarget=id;
+  document.getElementById('ash-who').innerHTML=`<b>${escHtml(c.title||'')}</b>・${escHtml(clientName(c.clientId))}`;
+  const d=new Date();
+  document.getElementById('ash-date').value=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  document.getElementById('ash-hours').value='';
+  document.getElementById('ash-note').value='';
+  document.getElementById('ash-err').textContent='';
+  openM('as-hours-modal');
+}
+function confirmAsHours(){
+  const c=S.cases[_asHoursTarget];if(!c){closeM('as-hours-modal');return;}
+  const h=parseFloat(document.getElementById('ash-hours').value)||0;
+  const date=document.getElementById('ash-date').value;
+  if(h<=0||!date){document.getElementById('ash-err').textContent='請填寫日期與小時數';return;}
+  c.timeLogs=c.timeLogs||[];
+  c.timeLogs.push({id:uid(),date,hours:h,note:document.getElementById('ash-note').value.trim()});
+  c.updatedAt=Date.now();
+  saveCaseObj(c);
+  _asOpen.add(c.id);
+  closeM('as-hours-modal');
+  renderAssessment();
+  toast(`已記 ${h} 小時`);
+}
+function delAsLog(caseId,logId){
+  const c=S.cases[caseId];if(!c)return;
+  const l=(c.timeLogs||[]).find(x=>x.id===logId);
+  showConf('刪除工時紀錄？',`「${l?.date||''} ${l?.note||''} ${l?.hours||0}h」將移除。`,()=>{
+    c.timeLogs=(c.timeLogs||[]).filter(x=>x.id!==logId);
+    c.updatedAt=Date.now();
+    saveCaseObj(c);
+    renderAssessment();
+  });
+}
+
 // ═══════════════════════════════════════════════════
 // ── 公司制（2026-08 起）──────────────────────────────
 // 依 billingMonth 自動分流：≥ 2026-08 → 公司出入帳檢視（收入全數
