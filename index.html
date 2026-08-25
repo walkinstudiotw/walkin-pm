@@ -1280,7 +1280,7 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
         <input class="form-input" id="f-due" type="date" onchange="updateFShareVisibility()">
       </div>
       <div class="form-group">
-        <label class="form-label">負責勞務</label>
+        <label class="form-label">專案指派</label>
         <input type="hidden" id="f-labor" value="齊">
         <div class="qi-master-picker">
           <button type="button" class="qi-master-trigger" id="flab-trigger" onclick="togglePicker('flab',refreshFlabDropdown)">
@@ -1372,7 +1372,7 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
     </div>
 
     <!-- 分潤設定 — 是否與工作室分潤（2026-08 公司化後的新案件自動隱藏） -->
-    <div class="form-group full" id="f-share-section" style="background:#fff8ee;border:1px solid #f0d8a0;border-radius:8px;padding:10px 12px">
+    <div class="form-group full" id="f-share-section" style="display:none">
       <label class="form-label" style="color:#a86a00;margin-bottom:6px">💸 分潤設定</label>
       <div style="display:flex;gap:14px;font-size:.78rem;align-items:center;flex-wrap:wrap">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
@@ -3071,11 +3071,11 @@ function openAddCase(){
   updateFShareVisibility();
   openM('case-modal');
 }
-// 公司化（2026-08 起）：交期落在公司制月份的案件收入全歸公司，不再分潤 → 隱藏分潤設定
+// 公司化後分潤設定已自表單移除（使用者 2026-08-24 決定）；歷史案件的
+// shareWithStudio 由 saveCase 原值保留，分潤數字不受影響
 function updateFShareVisibility(){
-  const due=document.getElementById('f-due').value||'';
   const sec=document.getElementById('f-share-section');
-  if(sec)sec.style.display=isCompanyMonth(due.slice(0,7))?'none':'';
+  if(sec)sec.style.display='none';
 }
 function openEditCase(id){
   const c=S.cases[id];if(!c)return;
@@ -3669,7 +3669,8 @@ function saveCase(){
       costBearer:document.getElementById('f-cost-bearer-owner').checked?'owner':'project',
       paidAt:S.editCaseId?(S.cases[S.editCaseId]?.outsource?.paidAt??null):null,
     }:null,
-    shareWithStudio:document.getElementById('f-share-studio').checked,
+    // 分潤設定 UI 已移除 — 既有案件保留原值（歷史分潤不變），新案件預設 true
+    shareWithStudio:(S.editCaseId?(S.cases[S.editCaseId]?.shareWithStudio!==false):true),
     pricing:{quotationItemId,amount:billingLinked?0:amount,addons:billingLinked?[]:_fAddons.filter(a=>a.qty>0).map(a=>({addonId:a.addonId,label:a.label,amount:a.amount,qty:a.qty}))},
     billedExternally:document.getElementById('f-billed-external').checked,
     isProject:document.getElementById('f-is-project').checked,
@@ -5730,7 +5731,7 @@ const BI_FIELDS=[
   {v:'materialNote',label:'素材說明'},
   {v:'paymentNote',label:'收款備註'},
   {v:'notes',label:'備註'},
-  {v:'laborOwner',label:'負責勞務 (齊/巫)'},
+  {v:'laborOwner',label:'專案指派 (齊/巫)'},
   {v:'status',label:'狀態 (待開始/執行中/修改中/已完成)'},
 ];
 let _biRows=[];
