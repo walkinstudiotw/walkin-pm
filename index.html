@@ -9754,9 +9754,21 @@ function buildTimelineChart(tl){
     </svg></div>
   </div>`;
 }
+// 時間軸月卡展開狀態（預設只展開當月）
+let _ctOpen=null;
+function ctToggleMonth(k){
+  _ctOpen.has(k)?_ctOpen.delete(k):_ctOpen.add(k);
+  renderCashTimeline();
+}
 function renderCashTimeline(){
   const el=document.getElementById('cash-timeline');if(!el)return;
   const tl=computeCashTimeline();
+  if(!_ctOpen){
+    // 預設展開當月；當月無項目時展開第一個有項目的月份
+    const hasItems=k=>{const m=tl.months.find(x=>x.key===k);return m&&(m.inflows.length||m.outflows.length);};
+    const firstK=hasItems(tl.monthKeys[0])?tl.monthKeys[0]:(tl.months.find(m=>m.inflows.length||m.outflows.length)||{}).key;
+    _ctOpen=new Set(firstK?[firstK]:[]);
+  }
   if(!tl.months.some(m=>m.inflows.length||m.outflows.length)){el.innerHTML='';return;}
   const ts=tl.summary.tierSums;
   const net=tl.summary.net;
@@ -9781,18 +9793,20 @@ function renderCashTimeline(){
         <div class="fc-amt" style="color:${isOut?'#c53030':'#1e6038'}">${badge}${isOut?'-':'+'}$${fmtMoney(x.amt)}${payBtn}${extBtn}</div>
       </div>`;
     }).join('');
+    const openM=_ctOpen.has(m.key);
+    const nItems=m.inflows.length+m.outflows.length;
     return `<section class="cash-month">
-      <div class="cash-month-header">
+      <div class="cash-month-header" style="cursor:pointer" onclick="ctToggleMonth('${m.key}')" title="${openM?'收合':'展開'}明細">
         <div class="cmh-top">
-          <div class="cmh-title">📅 ${escHtml(pretty)}</div>
-          <div class="cmh-meta">預估淨流入 <b style="color:${m.net>=0?'#1e6038':'#c53030'}">${m.net<0?'-':'+'}$${fmtMoney(Math.abs(m.net))}</b></div>
+          <div class="cmh-title"><span style="display:inline-block;color:#a08560;font-size:.7rem;transition:transform .15s;${openM?'':'transform:rotate(-90deg)'}">▼</span> 📅 ${escHtml(pretty)}</div>
+          <div class="cmh-meta">${nItems} 筆 · 預估淨流入 <b style="color:${m.net>=0?'#1e6038':'#c53030'}">${m.net<0?'-':'+'}$${fmtMoney(Math.abs(m.net))}</b></div>
         </div>
         <div class="cmh-pills">
           ${pill('A',sumBy(m.inflows,'A'))}${pill('B',sumBy(m.inflows,'B'))}${pill('C',sumBy(m.inflows,'C'))}
           ${pill('O',sumBy(m.outflows,'O'))}${pill('SAL',sumBy(m.outflows,'SAL'))}${pill('PEXP',sumBy(m.outflows,'PEXP'))}${pill('L',sumBy(m.outflows,'L'))}
         </div>
       </div>
-      <div class="fc-rows">${rows}</div>
+      ${openM?`<div class="fc-rows">${rows}</div>`:''}
     </section>`;
   }).join('');
   el.innerHTML=`
