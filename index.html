@@ -8270,9 +8270,11 @@ function asQuadrant(d,repl,floorRate){
 function asCases(){
   const cutoff=new Date();cutoff.setDate(cutoff.getDate()-365);
   const cy=`${cutoff.getFullYear()}-${String(cutoff.getMonth()+1).padStart(2,'0')}-${String(cutoff.getDate()).padStart(2,'0')}`;
+  // 排序：先按案件分類（TYPE_OPTIONS 順序），同分類內按交期（新→舊）
+  const typeRank=t=>{const i=TYPE_OPTIONS.findIndex(o=>o.v===(t||'其他'));return i<0?TYPE_OPTIONS.length-1:i;};
   return Object.values(S.cases||{})
     .filter(c=>c&&!c.linkedToCaseId&&((c.status||'todo')!=='done'||(c.dueDate||'')>=cy))
-    .sort((a,b)=>(b.dueDate||'').localeCompare(a.dueDate||''));
+    .sort((a,b)=>(typeRank(a.type)-typeRank(b.type))||(b.dueDate||'').localeCompare(a.dueDate||''));
 }
 function renderAssessment(){
   const be=document.getElementById('as-breakeven');
@@ -8303,7 +8305,15 @@ function renderAssessment(){
   const list=asCases();
   let rows=`<tr><th style="width:16px"></th><th>案件</th><th class="r" style="width:86px">收入</th><th class="r" style="width:80px">成本</th><th class="r" style="width:86px">毛利</th><th class="r" style="width:76px">實際工時</th><th class="r" style="width:96px">真實時薪</th><th style="width:96px">可複製性</th><th style="width:42px">情緒</th><th style="width:72px">象限</th><th style="width:92px"></th></tr>`;
   const cells={engine:[],sign:[],base:[],cut:[]};
+  let _lastType=null;
   list.forEach(c=>{
+    // 分類分隔列（依 TYPE_OPTIONS 順序分組）
+    const _t=c.type||'其他';
+    if(_t!==_lastType){
+      _lastType=_t;
+      const _col=(TYPE_OPTIONS.find(o=>o.v===_t)||{}).color||'#888';
+      rows+=`<tr><td colspan="11" style="background:#faf6ee;border-top:1px solid var(--line);padding:5px 10px;font-size:.66rem;font-weight:800;color:#5a3d10"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${_col};margin-right:6px"></span>${escHtml(_t)}</td></tr>`;
+    }
     const d=asRowData(c);
     const a=c.assessment||{};
     const q=asQuadrant(d,a.repl,B.floor);
