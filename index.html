@@ -9108,11 +9108,6 @@ function renderCashflow(){
       <div class="val green">$${fmtMoney(agg.coNet)}</div>
       <div class="sub">2026/08 起 · ${agg.coN} 張（薪資另計於各月）</div>
     </div>`:''}
-    ${agg.studio?`<div class="cash-card studio">
-      <div class="lbl">🏠 工作室分潤</div>
-      <div class="val gold">$${fmtMoney(agg.studio)}</div>
-      <div class="sub">分潤制（7 月前）扣外包後 30%</div>
-    </div>`:''}
     ${agg.cost>0?`<div class="cash-card" style="border-color:#e8aaaa;background:#fde8e8">
       <div class="lbl" style="color:#c53030">📤 支出/外包成本</div>
       <div class="val" style="color:#c53030">$${fmtMoney(agg.cost)}</div>
