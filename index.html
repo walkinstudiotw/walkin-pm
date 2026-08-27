@@ -341,7 +341,11 @@ body{display:flex;flex-direction:column}
 
 /* QUOTATION TAB */
 .quote-layout{display:grid;grid-template-columns:minmax(320px,1fr) minmax(380px,540px);height:100%}
-.quote-layout.preview-off{grid-template-columns:1fr}
+.quote-layout.preview-off{grid-template-columns:1fr 36px}
+.quote-layout.preview-off .quote-preview-bar{flex-direction:column;padding:10px 4px;justify-content:flex-start}
+.quote-layout.preview-off .quote-preview-bar .lbl{display:none}
+.quote-layout.preview-off .quote-preview-bar .export-btn{display:none}
+.quote-layout.preview-off .quote-preview-frame{display:none}
 .quote-side{background:#fbfaf6;border-right:1px solid #e3e0d6;overflow-y:auto;padding:8px}
 .quote-side::-webkit-scrollbar{width:4px}
 .quote-side::-webkit-scrollbar-thumb{background:#cfc9ba;border-radius:2px}
@@ -675,6 +679,9 @@ select.form-select:focus{border-color:#666666}
   /* quote: 2-col → stacked, preview below */
   .quote-layout{grid-template-columns:1fr;grid-auto-rows:auto;height:auto;overflow-y:auto}
   .quote-preview-wrap{border-top:2px solid #e3e0d6;max-height:none}
+  /* 手機收合預覽：維持單欄、bar 保持橫向（只藏預覽內容） */
+  .quote-layout.preview-off{grid-template-columns:1fr}
+  .quote-layout.preview-off .quote-preview-bar{flex-direction:row;padding:10px 14px}
   /* tab panels that pinned height for inner scrolling → let page scroll */
   .tab-panel{overflow-y:auto}
   /* cashflow: 8-col detail grid swipes horizontally */
@@ -8275,11 +8282,22 @@ function asQuadrant(d,repl,floorRate){
 function asCases(){
   const cutoff=new Date();cutoff.setDate(cutoff.getDate()-365);
   const cy=`${cutoff.getFullYear()}-${String(cutoff.getMonth()+1).padStart(2,'0')}-${String(cutoff.getDate()).padStart(2,'0')}`;
-  // 排序：先按案件分類（TYPE_OPTIONS 順序），同分類內按交期（新→舊）
-  const typeRank=t=>{const i=TYPE_OPTIONS.findIndex(o=>o.v===(t||'其他'));return i<0?TYPE_OPTIONS.length-1:i;};
+  // 排序：第一層按客戶，同客戶內按交期（新→舊）
+  const cname=c=>S.clients[c.clientId]?.name||'～未指定客戶';
   return Object.values(S.cases||{})
     .filter(c=>c&&!c.linkedToCaseId&&((c.status||'todo')!=='done'||(c.dueDate||'')>=cy))
-    .sort((a,b)=>(typeRank(a.type)-typeRank(b.type))||(b.dueDate||'').localeCompare(a.dueDate||''));
+    .sort((a,b)=>cname(a).localeCompare(cname(b),'zh-Hant')||(b.dueDate||'').localeCompare(a.dueDate||''));
+}
+// 「此案不計」：標記後從體檢隱藏（存 assessment.excluded，saveCase 會保留）
+let _asShowExcluded=false;
+function asSetExcluded(id,val){
+  const c=S.cases[id];if(!c)return;
+  c.assessment=c.assessment||{};
+  c.assessment.excluded=!!val;
+  c.updatedAt=Date.now();
+  saveCaseObj(c);
+  renderAssessment();
+  toast(val?'已設為不計 — 從體檢隱藏':'已恢復計入');
 }
 function renderAssessment(){
   const be=document.getElementById('as-breakeven');
@@ -8306,26 +8324,28 @@ function renderAssessment(){
       </div>
     </div>
   </div>`;
-  // 體檢表
-  const list=asCases();
+  // 體檢表（「此案不計」的案件預設隱藏，可切換顯示）
+  const listAll=asCases();
+  const excludedN=listAll.filter(c=>c.assessment?.excluded).length;
+  const list=_asShowExcluded?listAll:listAll.filter(c=>!c.assessment?.excluded);
   let rows=`<tr><th style="width:16px"></th><th>案件</th><th class="r" style="width:86px">收入</th><th class="r" style="width:80px">成本</th><th class="r" style="width:86px">毛利</th><th class="r" style="width:76px">實際工時</th><th class="r" style="width:96px">真實時薪</th><th style="width:96px">可複製性</th><th style="width:42px">情緒</th><th style="width:72px">象限</th><th style="width:92px"></th></tr>`;
   const cells={engine:[],sign:[],base:[],cut:[]};
-  let _lastType=null;
+  let _lastClient=null;
   list.forEach(c=>{
-    // 分類分隔列（依 TYPE_OPTIONS 順序分組）
-    const _t=c.type||'其他';
-    if(_t!==_lastType){
-      _lastType=_t;
-      const _col=(TYPE_OPTIONS.find(o=>o.v===_t)||{}).color||'#888';
-      rows+=`<tr><td colspan="11" style="background:#faf6ee;border-top:1px solid var(--line);padding:5px 10px;font-size:.66rem;font-weight:800;color:#5a3d10"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${_col};margin-right:6px"></span>${escHtml(_t)}</td></tr>`;
+    // 客戶分隔列（第一層分類）
+    const _ck=c.clientId||'~none';
+    if(_ck!==_lastClient){
+      _lastClient=_ck;
+      rows+=`<tr><td colspan="11" style="background:#faf6ee;border-top:1px solid var(--line);padding:5px 10px;font-size:.66rem;font-weight:800;color:#5a3d10"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${clientColor(c.clientId)};margin-right:6px"></span>${escHtml(clientName(c.clientId)||'未指定客戶')}</td></tr>`;
     }
     const d=asRowData(c);
     const a=c.assessment||{};
-    const q=asQuadrant(d,a.repl,B.floor);
+    const exc=!!a.excluded;
+    const q=exc?null:asQuadrant(d,a.repl,B.floor);
     if(q)cells[q].push({c,d});
     const open=_asOpen.has(c.id);
     const qBadge=q?`<span style="border-radius:8px;padding:1px 8px;font-size:.62rem;font-weight:700;background:${AS_Q[q].bg};color:${AS_Q[q].fg};border:1px solid var(--line)">${AS_Q[q].n}</span>`:'<span class="muted" style="font-size:.62rem">記工時後判定</span>';
-    rows+=`<tr style="cursor:pointer" onclick="_asOpen.has('${c.id}')?_asOpen.delete('${c.id}'):_asOpen.add('${c.id}');renderAssessment()">
+    rows+=`<tr style="cursor:pointer;${exc?'opacity:.5':''}" onclick="_asOpen.has('${c.id}')?_asOpen.delete('${c.id}'):_asOpen.add('${c.id}');renderAssessment()">
       <td style="border-left:4px solid ${clientColor(c.clientId)}"><span style="display:inline-block;width:12px;color:#999;font-size:.6rem;transition:transform .15s;${open?'':'transform:rotate(-90deg)'}">▼</span></td>
       <td>${c.isProject?'<span style="background:#1e6038;color:#fff;border-radius:8px;padding:0 6px;font-size:.58rem;font-weight:700;margin-right:4px">📦</span>':''}<b style="font-size:.78rem">${escHtml(c.title||'')}</b>
         <div style="font-size:.6rem;color:#999">${escHtml(clientName(c.clientId))} · ${STATUS_LABEL[c.status||'todo']||''}${d.kids.length?` · ${d.kids.filter(k=>(k.status||'todo')==='done').length}/${d.kids.length} 集`:''}</div></td>
@@ -8341,7 +8361,9 @@ function renderAssessment(){
         return `<button style="border:0;background:${on?bg:'#fff'};color:${on?col:'#ccc'};padding:2px 8px;font-size:.66rem;font-weight:700;cursor:pointer;font-family:'JetBrains Mono',monospace" onclick="asSetRepl('${c.id}','${r}')" title="A=可交付 B=半可交付 C=只能自己做">${r}</button>`;}).join('')}</span></td>
       <td onclick="event.stopPropagation()"><span style="cursor:pointer;font-size:.95rem" onclick="asCycleMood('${c.id}')" title="想再做嗎？點擊切換">${a.mood||'😐'}</span></td>
       <td>${qBadge}</td>
-      <td onclick="event.stopPropagation()"><button class="nav-btn primary" style="font-size:.62rem;padding:2px 8px" onclick="openAsHours('${c.id}')">⏱ 記工時</button></td>
+      <td onclick="event.stopPropagation()" style="white-space:nowrap">${exc
+        ?`<button class="nav-btn" style="font-size:.62rem;padding:2px 8px" onclick="asSetExcluded('${c.id}',false)" title="恢復列入體檢">↩ 恢復</button>`
+        :`<button class="nav-btn primary" style="font-size:.62rem;padding:2px 8px" onclick="openAsHours('${c.id}')">⏱ 記工時</button><button class="act-btn" style="font-size:.7rem;padding:1px 4px" onclick="asSetExcluded('${c.id}',true)" title="此案不計 — 從體檢隱藏（不用填工時；可從表格下方恢復）">🚫</button>`}</td>
     </tr>`;
     if(open){
       const logs=(c.timeLogs||[]).slice().sort((x,y)=>(y.date||'').localeCompare(x.date||''));
@@ -8370,6 +8392,7 @@ function renderAssessment(){
     <div style="padding:10px 14px 6px;font-size:.78rem;font-weight:900;color:#1e6038">🩺 案件體檢
       <span style="font-weight:400;font-size:.64rem;color:#888">— 近 12 個月＋進行中；收入°＝尚未請款（以案件金額預估）；點列展開工時 log</span></div>
     <div class="scrollx" style="overflow-x:auto"><table class="tbl" style="min-width:980px">${rows}</table></div>
+    ${excludedN?`<div style="padding:6px 14px 10px;font-size:.64rem;color:#999">🚫 已不計 ${excludedN} 件（不列入體檢與四象限）<button class="nav-btn" style="font-size:.6rem;padding:1px 8px;margin-left:8px" onclick="_asShowExcluded=!_asShowExcluded;renderAssessment()">${_asShowExcluded?'收起':'顯示'}</button></div>`:''}
   </div>
   <div class="cash-row" style="cursor:default">
     <div style="padding:10px 14px 6px;font-size:.78rem;font-weight:900;color:#1e6038">🧭 四象限
@@ -9935,12 +9958,11 @@ window.addEventListener('resize',()=>{
 function togglePreview(){
   const lay=document.getElementById('quote-layout');
   lay.classList.toggle('preview-off');
-  const wrap=document.getElementById('quote-preview-wrap');
-  wrap.style.display=lay.classList.contains('preview-off')?'none':'flex';
-  // adjust button label/icon
+  const off=lay.classList.contains('preview-off');
+  // 收合時保留窄欄與展開鈕（整個 wrap 藏掉會讓按鈕消失、叫不回來）
   const btn=document.querySelector('.quote-preview-bar button[onclick="togglePreview()"]');
-  if(btn)btn.textContent=lay.classList.contains('preview-off')?'⇤':'⇥';
-  fitPreviewScale();
+  if(btn){btn.textContent=off?'⇤':'⇥';btn.title=off?'展開預覽':'收合預覽';}
+  if(!off)fitPreviewScale();
 }
 
 async function downloadQuotationPdf(){
