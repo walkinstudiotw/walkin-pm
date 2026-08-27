@@ -199,16 +199,16 @@ body{display:flex;flex-direction:column}
 .cash-month-pill.studio{background:#faf6ee;border-color:#c8b088}
 .cash-month-pill.studio .v{color:#a08560}
 .cash-month-unpaid{font-size:.68rem;color:#a86a00;font-weight:600}
-/* forecast tab */
+/* 金流時間軸 */
 .fc-rows{background:#ffffff;border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--shadow-card)}
-.fc-line{display:grid;grid-template-columns:1fr auto 110px;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid #f1eee6;cursor:pointer;font-size:.74rem;transition:background .12s}
+.fc-line{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid #f1eee6;cursor:pointer;font-size:.74rem;transition:background .12s}
 .fc-line:last-child{border-bottom:none}
 .fc-line:hover{background:#f8f8f8}
-.fc-lab{color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fc-lab{color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .fc-lab.est{color:#888;font-style:italic}
 .fc-date{font-family:'JetBrains Mono',monospace;font-size:.62rem;color:#999;margin-left:8px}
 .fc-tier{font-size:.6rem;font-weight:700;padding:1px 7px;border:1px solid;border-radius:9px;white-space:nowrap}
-.fc-amt{font-family:'JetBrains Mono',monospace;font-weight:700;text-align:right}
+.fc-amt{font-family:'JetBrains Mono',monospace;font-weight:700;text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:5px;white-space:nowrap}
 .cash-row{background:#ffffff;border:1px solid var(--line);border-radius:12px;overflow:hidden;transition:border-color .12s;box-shadow:var(--shadow-card)}
 .cash-row:hover{border-color:#7de89a}
 .cash-row-head{display:grid;grid-template-columns:90px 1fr 80px 100px 90px 30px;gap:10px;align-items:center;padding:10px 14px;cursor:pointer;font-size:.78rem}
@@ -773,7 +773,6 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
         <div class="sb-group-title">收款開票</div>
         <div class="sb-item" data-tab="invoices"><span class="ico">🧾</span>Invoice</div>
         <div class="sb-item" data-tab="cashflow"><span class="ico">💵</span>金流</div>
-        <div class="sb-item" data-tab="forecast"><span class="ico">📈</span>預估</div>
         <div class="sb-item" data-tab="assessment"><span class="ico">📊</span>專案管理</div>
       </div>
     </div>
@@ -996,8 +995,8 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
   <div class="scroll-body">
     <!-- Summary cards -->
     <div class="cash-summary" id="cash-summary"></div>
-    <!-- 入帳時程（跨月應收帳款，按預計入帳日） -->
-    <div id="cash-ar"></div>
+    <!-- 金流時間軸（原「入帳時程」＋「預估」分頁合併：預估流入/流出按月） -->
+    <div id="cash-timeline"></div>
     <!-- 專案總覽（isProject 案件：分期請款＋專案支出＋跨月淨額） -->
     <div id="cash-projects"></div>
     <!-- Invoice list with expand-to-view-split -->
@@ -1012,24 +1011,12 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
   </div>
 </div>
 
-<!-- TAB: FORECAST -->
+<!-- TAB: ASSESSMENT -->
 <div class="tab-panel" id="tab-assessment">
   <div class="scroll-body">
     <div id="as-root" style="padding:14px">
       <div id="as-breakeven"></div>
       <div id="as-body"></div>
-    </div>
-  </div>
-</div>
-
-<div class="tab-panel" id="tab-forecast">
-  <div class="scroll-body">
-    <div class="cash-summary" id="fc-summary"></div>
-    <div class="cash-list" id="fc-list"></div>
-    <div id="fc-empty" class="empty-state" style="display:none">
-      <div class="empty-icon">📈</div>
-      <div class="empty-title">沒有可預估的項目</div>
-      <div style="font-size:.8rem">新增案件或寄出 Invoice 後，這裡會依交期／付款期限做未來收支預估</div>
     </div>
   </div>
 </div>
@@ -2419,7 +2406,7 @@ function _renderBlocked(){
   if(document.querySelector('.modal-overlay.open'))return true;
   const ae=document.activeElement;
   return !!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)
-    &&ae.closest('#cases-tbody,#clients-grid,#wi-tbody,#inv-list,#inv-editor-wrap,#inv-preview-wrap,#cash-list,#cash-summary,#fc-list,#outsourcers-grid,#quote-main,#as-root'));
+    &&ae.closest('#cases-tbody,#clients-grid,#wi-tbody,#inv-list,#inv-editor-wrap,#inv-preview-wrap,#cash-list,#cash-summary,#outsourcers-grid,#quote-main,#as-root'));
 }
 function _flushPendingRender(){
   if(_pendingRender&&!_renderBlocked()){_pendingRender=false;renderCurrentTab();}
@@ -2472,7 +2459,6 @@ const TAB_META={
   quotations:{ico:'💰',label:'報價單',addBtn:{txt:'＋ 新增報價單',fn:'openNewQuoteClientModal'}},
   invoices:{ico:'🧾',label:'Invoice',addBtn:null},
   cashflow:{ico:'💵',label:'金流',addBtn:null},
-  forecast:{ico:'📈',label:'預估',addBtn:null},
   assessment:{ico:'📊',label:'專案管理（體檢）',addBtn:null},
 };
 // ── MOBILE SIDEBAR DRAWER ──
@@ -2525,7 +2511,6 @@ function renderCurrentTab(){
   else if(n==='quotations')renderQuotations();
   else if(n==='invoices')renderInvoices();
   else if(n==='cashflow')renderCashflow();
-  else if(n==='forecast')renderForecast();
   else if(n==='assessment')renderAssessment();
   else if(n==='outsourcers')renderOutsourcers();
 }
@@ -8529,39 +8514,7 @@ function confirmInvPay(){
   renderCashflow();
   toast(`已入帳 — ${inv.paidDate}`);
 }
-// ── 入帳時程：所有待收 invoice 按付款期限排序（跨月）──
-function renderArSchedule(){
-  const el=document.getElementById('cash-ar');if(!el)return;
-  const ar=invoiceList().filter(i=>i.status==='sent')
-    .map(i=>({inv:i,due:(i.dueDate||'').replace(/\//g,'-')}))
-    .sort((a,b)=>(a.due||'9999').localeCompare(b.due||'9999'));
-  if(!ar.length){el.innerHTML='';return;}
-  const badge=(due)=>{
-    if(!due)return '<span style="color:#999;font-size:.62rem">無期限</span>';
-    const n=dUntil(due);
-    if(n===null)return '';
-    if(n<0)return `<span class="due-badge over">逾期 ${-n} 天</span>`;
-    if(n===0)return `<span class="due-badge today">今天</span>`;
-    if(n<=7)return `<span class="due-badge soon">${n} 天後</span>`;
-    return `<span class="due-badge" style="background:#f1eee6;color:#666">${n} 天後</span>`;
-  };
-  const total=ar.reduce((s,a)=>s+(a.inv.total||0),0);
-  const overdue=ar.filter(a=>a.due&&dUntil(a.due)!==null&&dUntil(a.due)<0).reduce((s,a)=>s+(a.inv.total||0),0);
-  el.innerHTML=`<div style="padding:0 14px 6px">
-    <div class="cash-row" style="cursor:default">
-      <div style="padding:10px 14px 4px;font-size:.72rem;font-weight:700;color:#1e6038">📅 入帳時程（${ar.length} 張待收 · 合計 $${fmtMoney(total)}${overdue?` · <span style="color:#c53030">逾期 $${fmtMoney(overdue)}</span>`:''}）</div>
-      ${ar.map(a=>{const inv=a.inv;
-        return `<div class="cash-line" style="grid-template-columns:100px 1fr 150px 90px 90px 70px;padding:6px 14px">
-          <div class="num" style="text-align:left;font-weight:700">${escHtml(inv.invoiceNumber||'?')}</div>
-          <div class="lab">${escHtml(S.clients[inv.clientId]?.name||'(客戶已刪除)')}</div>
-          <div class="num" style="font-size:.64rem;color:#888;text-align:left">請款 ${escHtml((inv.issuedDate||'?').slice(5))} → 預計 ${escHtml((inv.dueDate||'—').slice(5))}</div>
-          <div style="text-align:right">${badge(a.due)}</div>
-          <div class="num" style="color:#a86a00;font-weight:700">$${fmtMoney(inv.total||0)}</div>
-          <div style="text-align:right"><button class="nav-btn primary" style="font-size:.62rem;padding:2px 8px" onclick="openInvPayModal('${inv.id}')">✓ 入帳</button></div>
-        </div>`;}).join('')}
-    </div>
-  </div>`;
-}
+// （原「入帳時程」renderArSchedule 已併入金流時間軸 renderCashTimeline — 見檔尾時間軸模組）
 // ── 專案總覽（金流頁）─────────────────────────────
 // 每月專案支出合計（按支出日期月份 → 計入該月損益）
 function projectExpensesForMonth(m){
@@ -8961,8 +8914,8 @@ function renderCashflow(){
       <div class="sub">已從淨額扣除</div>
     </div>`:''}
   `;
-  // 入帳時程（跨月應收）+ 專案總覽 + 應付外包款
-  renderArSchedule();
+  // 金流時間軸（預估流入/流出按月）+ 專案總覽 + 應付外包款
+  renderCashTimeline();
   renderProjectCards();
   renderOutsourcePayables();
   // Render invoice rows
@@ -9389,24 +9342,25 @@ function updateInvoicePaidDateFromCash(id,val){
 }
 
 // ═══════════════════════════════════════════════════
-// ── FORECAST MODULE（未來收支預估）─────────────────
+// ── 金流時間軸（原「入帳時程」＋「預估」分頁合併）──
 // ═══════════════════════════════════════════════════
-// 全部從既有資料推算，零新欄位：
-//   收入 A=已請款待收(sent, 依付款期限)  B=已完成未請款(依交期)  C=進行中(依交期)
-//   支出 O=外包待付(依交期)  L=勞務未付(已確定, 當月)  LE=勞務估算(未請款案件, 依交期)
-const FC_TIERS={
+// 全部從既有資料推算，零新欄位。公司制口徑（收入全額入公司帳，不做分潤估算）：
+//   流入 A=已請款待收(sent, 依付款期限)  B=已完成未請款(依交期)  C=進行中(依交期)
+//   流出 O=外包待付(依交期)  SAL=薪資未發(SALARY_ERA 起)  PEXP=專案支出(當月起)  L=歷史勞務未付(分潤制, 當月)
+const CT_MONTHS=6;  // 預估區間（月）
+const CT_TIERS={
   A:{name:'待收(已請款)',color:'#1e6038',sign:1},
   B:{name:'已完成未請款',color:'#1e4a80',sign:1},
   C:{name:'進行中',color:'#888',sign:1},
   O:{name:'外包',color:'#c53030',sign:-1},
-  L:{name:'勞務未付',color:'#a86a00',sign:-1},
-  LE:{name:'勞務(估)',color:'#a86a00',sign:-1},
   SAL:{name:'薪資',color:'#5a3d80',sign:-1},
+  PEXP:{name:'專案支出',color:'#c53030',sign:-1},
+  L:{name:'勞務未付',color:'#a86a00',sign:-1},
 };
-function computeForecast(){
+function computeCashTimeline(){
   const now=new Date();
   const monthKeys=[];
-  for(let k=0;k<3;k++){
+  for(let k=0;k<CT_MONTHS;k++){
     const d=new Date(now.getFullYear(),now.getMonth()+k,1);
     monthKeys.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
   }
@@ -9419,84 +9373,58 @@ function computeForecast(){
     if(buckets.has(ym))return ym;
     return ym<monthKeys[0]?monthKeys[0]:KEY_LATER;
   };
-  // 工作室收入預估：key → {c:已請款待收的工作室份, e:未請款案件估算}
-  const studioBy={};
-  const addStudio=(key,field,amt)=>{
-    if(amt<=0)return;
-    studioBy[key]=studioBy[key]||{c:0,e:0};
-    studioBy[key][field]+=amt;
-  };
-  // A: sent invoices → 付款期限月份
+  // A: sent invoices → 付款期限月份（帶 due 供逾期 badge／✓入帳鈕）
   invoiceList().filter(i=>i.status==='sent').forEach(inv=>{
-    const ym=(inv.dueDate||'').replace(/\//g,'-').slice(0,7);
+    const due=(inv.dueDate||'').replace(/\//g,'-');
     const c=S.clients[inv.clientId];
-    buckets.get(keyFor(ym)).inflows.push({tier:'A',label:`${inv.invoiceNumber||''}｜${c?.name||'?'}`,date:inv.dueDate||'',amt:inv.total||0,click:`jumpToInvoice('${inv.id}')`});
-    addStudio(keyFor(ym),'c',computeInvoiceSplit(inv).totals.studio);
+    buckets.get(keyFor(due.slice(0,7))).inflows.push({tier:'A',invId:inv.id,due,label:`${inv.invoiceNumber||''}｜${c?.name||'?'}`,date:inv.dueDate||'',amt:inv.total||0,click:`jumpToInvoice('${inv.id}')`});
   });
-  // B/C 收入 + LE 勞務估算：未請款的主案件
+  // B/C: 未請款的主案件（公司制：收入全額列入，不做分潤估算）
   Object.values(S.cases||{}).forEach(cs=>{
     if(!cs||cs.linkedToCaseId)return;
-    if(cs.billedExternally)return;  // 系統外已請款的歷史案件 — 不列入預估
+    if(cs.billedExternally)return;  // 系統外已請款的歷史案件 — 不列入
     if(cs.isProject){
       // 專案：已請款各期由 A（待收）處理；這裡只列「未請款餘額」
       const pBilled=projectBilledParts(cs.id).filter(p=>p.inv.status!=='draft').reduce((s,p)=>s+p.amt,0);
       const pRem=(cs.pricing?.amount||0)-pBilled;
-      const pYm=(cs.dueDate||'').slice(0,7);
       if(pRem>0){
         const pName=S.clients[cs.clientId]?.name||'?';
-        buckets.get(keyFor(pYm)).inflows.push({tier:(cs.status||'todo')==='done'?'B':'C',caseId:cs.id,label:`${cs.title||''}（未請款餘額）｜${pName}`,date:cs.dueDate||'',amt:pRem,click:`openEditCase('${cs.id}')`});
-        addStudio(keyFor(pYm),'e',pRem);  // 公司制粗估：全額歸公司（不預扣外包/支出）
+        buckets.get(keyFor((cs.dueDate||'').slice(0,7))).inflows.push({tier:(cs.status||'todo')==='done'?'B':'C',caseId:cs.id,label:`${cs.title||''}（未請款餘額）｜${pName}`,date:cs.dueDate||'',amt:pRem,click:`openEditCase('${cs.id}')`});
       }
       return;
     }
     if(resolveCaseInvoice(cs))return;  // 已真實掛在 invoice 上 → 由 A/L 處理
     const amt=cs.pricing?.amount||0;
-    const ym=(cs.dueDate||'').slice(0,7);
+    if(amt<=0)return;
     const cName=S.clients[cs.clientId]?.name||'?';
-    const st=cs.status||'todo';
-    if(amt>0){
-      const tier=st==='done'?'B':'C';
-      buckets.get(keyFor(ym)).inflows.push({tier,caseId:cs.id,label:`${cs.title||''}｜${cName}`,date:cs.dueDate||'',amt,click:`openEditCase('${cs.id}')`});
-    }
-    // 公司制月份（2026-08 起）：收入全數入公司帳，無勞務分潤估算
-    if(isCompanyMonth(ym)){
-      const coCost=cs.isOutsourced?computeOutsourceCost(cs):(cs.cost||0);
-      addStudio(keyFor(ym),'e',Math.max(0,amt-coCost));
-      return;
-    }
-    // 勞務估算（粗估，不含稅內含與覆寫）：
-    //   外包歸屬 project（舊制）→ net = 金額 − 外包成本，再分 70/100%
-    //   外包歸屬 owner → 先按全額分，再由勞務方份額扣外包費
-    const cost=cs.isOutsourced?computeOutsourceCost(cs):(cs.cost||0);
-    const bearer=(cs.isOutsourced&&cs.outsource?.costBearer==='owner')?'owner':'project';
-    const net=Math.max(0,amt-(bearer==='project'?cost:0));
-    const owner=cs.laborOwner||'齊';
-    if(net>0&&(owner==='齊'||owner==='巫')){
-      let cut=(cs.shareWithStudio!==false)?Math.round(net*0.7):net;
-      if(bearer==='owner')cut=Math.max(0,cut-cost);
-      if(cut>0)buckets.get(keyFor(ym)).outflows.push({tier:'LE',who:owner,label:`${owner} 勞務（估）｜${cs.title||''}`,date:cs.dueDate||'',amt:cut,click:`openEditCase('${cs.id}')`});
-      // 工作室份估算：分潤時拿 30%（owner 模式下不受外包費影響）
-      if(cs.shareWithStudio!==false)addStudio(keyFor(ym),'e',net-Math.round(net*0.7));
-    }else if(net>0){
-      // 負責人未知 → 全歸工作室（與金流 split 規則一致）
-      addStudio(keyFor(ym),'e',bearer==='owner'?Math.max(0,net-cost):net);
-    }
+    const tier=(cs.status||'todo')==='done'?'B':'C';
+    buckets.get(keyFor((cs.dueDate||'').slice(0,7))).inflows.push({tier,caseId:cs.id,label:`${cs.title||''}｜${cName}`,date:cs.dueDate||'',amt,click:`openEditCase('${cs.id}')`});
   });
-  // SAL: 公司制月份的薪資支出（未發的列入該月）
+  // SAL: 薪資支出（SALARY_ERA 起、未發的列入該月）
   monthKeys.filter(m=>m>=SALARY_ERA).forEach(m=>{
     monthSalary(m).forEach(x=>{
       if(x.amount>0&&!x.pay?.paid){
-        buckets.get(m).outflows.push({tier:'SAL',who:x.name,label:`${x.name} 薪資｜${m.replace('-','/')}`,date:'',amt:x.amount,click:`switchTab('cashflow')`});
+        buckets.get(m).outflows.push({tier:'SAL',label:`${x.name} 薪資｜${m.replace('-','/')}`,date:'',amt:x.amount,click:''});
       }
     });
   });
-  // L: 已確定的勞務未付（sent/paid invoices 的未勾付款）→ 當月（已到期義務）
+  // PEXP: 專案支出（case.projectExpenses，當月起的未來支出；過去月份已付訖不列）
+  Object.values(S.cases||{}).forEach(cs=>{
+    if(!cs?.isProject)return;
+    (cs.projectExpenses||[]).forEach(e=>{
+      const ym=(e.date||'').replace(/\//g,'-').slice(0,7);
+      const amt=parseInt(e.amount)||0;
+      if(!ym||ym<monthKeys[0]||amt<=0)return;
+      buckets.get(keyFor(ym)).outflows.push({tier:'PEXP',label:`專案支出 ${e.label||e.category||''}｜${cs.title||''}`,date:e.date||'',amt,click:`openEditCase('${cs.id}')`});
+    });
+  });
+  // L: 已確定的歷史勞務未付（分潤制 sent/paid invoices 的未勾付款）→ 當月（已到期義務）
   // 公司制 invoice 無分潤 → 排除
   invoiceList().filter(i=>(i.status==='sent'||i.status==='paid')&&!isCompanyMonth(i.billingMonth)).forEach(inv=>{
     const split=computeInvoiceSplit(inv);
     [['qi','齊',split.totals.qi],['wu','巫',split.totals.wu]].forEach(([k,name,amtK])=>{
       if(amtK>0&&!inv.payouts?.[k]?.paid){
-        buckets.get(monthKeys[0]).outflows.push({tier:'L',who:name,label:`${name} 勞務未付｜${inv.invoiceNumber||''}`,date:'',amt:amtK,click:`jumpToInvoice('${inv.id}')`});
+        buckets.get(monthKeys[0]).outflows.push({tier:'L',label:`${name} 勞務未付｜${inv.invoiceNumber||''}（分潤制）`,date:'',amt:amtK,click:`jumpToInvoice('${inv.id}')`});
       }
     });
   });
@@ -9510,7 +9438,7 @@ function computeForecast(){
     buckets.get(keyFor(ym)).outflows.push({tier:'O',label:`外包 ${o?.name||'?'}｜${cs.title||''}`,date:cs.dueDate||'',amt:cost,click:`openEditCase('${cs.id}')`});
   });
   // 彙整
-  const tierOrder={A:0,B:1,C:2,O:0,L:1,LE:2};
+  const tierOrder={A:0,B:1,C:2,O:0,SAL:1,PEXP:2,L:3};
   const months=[...buckets.entries()].map(([key,b])=>{
     const srt=(arr)=>arr.sort((x,y)=>(tierOrder[x.tier]-tierOrder[y.tier])||(x.date||'').localeCompare(y.date||''));
     const inSum=b.inflows.reduce((s,x)=>s+x.amt,0);
@@ -9524,73 +9452,117 @@ function computeForecast(){
     tierSums:{},
   };
   summary.net=summary.inflow-summary.outflow;
-  Object.keys(FC_TIERS).forEach(t=>{
+  Object.keys(CT_TIERS).forEach(t=>{
     summary.tierSums[t]=shown.reduce((s,m)=>s+[...m.inflows,...m.outflows].filter(x=>x.tier===t).reduce((a,x)=>a+x.amt,0),0);
   });
-  // 齊的個人收入預估 = 屬於齊的 勞務未付(已確定) + 勞務(估)
-  summary.qiConfirmed=shown.reduce((s,m)=>s+m.outflows.filter(x=>x.tier==='L'&&x.who==='齊').reduce((a,x)=>a+x.amt,0),0);
-  summary.qiEstimated=shown.reduce((s,m)=>s+m.outflows.filter(x=>x.tier==='LE'&&x.who==='齊').reduce((a,x)=>a+x.amt,0),0);
-  summary.qiIncome=summary.qiConfirmed+summary.qiEstimated;
-  // 工作室收入預估 = 已請款待收的工作室份 + 未請款案件的 30% 估算
-  summary.studioConfirmed=monthKeys.reduce((s,k)=>s+(studioBy[k]?.c||0),0);
-  summary.studioEstimated=monthKeys.reduce((s,k)=>s+(studioBy[k]?.e||0),0);
-  summary.studioIncome=summary.studioConfirmed+summary.studioEstimated;
+  // 逾期待收合計（A 中付款期限已過者）— 承接原「入帳時程」的逾期警示
+  summary.overdueA=shown.reduce((s,m)=>s+m.inflows.filter(x=>x.tier==='A'&&x.due&&dUntil(x.due)!==null&&dUntil(x.due)<0).reduce((a,x)=>a+x.amt,0),0);
   return {monthKeys,months,summary};
 }
-// 快速標記歷史案件為「系統外已請款」（從預估頁直接點）
+// 快速標記歷史案件為「系統外已請款」（從時間軸 B/C 行直接點）
 function markCaseBilledExternally(id){
   const cs=S.cases[id];if(!cs)return;
   showConf('標記為系統外已請款？',`「${cs.title||''}」是在本系統建立前就已請款的歷史案件？標記後不再出現在預估、未請款篩選與月底結算（案件本身保留，可隨時在案件編輯中取消勾選）。`,()=>{
     cs.billedExternally=true;
     cs.updatedAt=Date.now();
     saveCaseObj(cs);
-    renderForecast();
+    renderCashflow();
     toast('已標記 — 不再列入預估');
   });
 }
-function renderForecast(){
-  const list=document.getElementById('fc-list');
-  const summaryEl=document.getElementById('fc-summary');
-  const empty=document.getElementById('fc-empty');
-  if(!list)return;
-  const fc=computeForecast();
-  const hasAny=fc.months.some(m=>m.inflows.length||m.outflows.length);
-  if(!hasAny){summaryEl.innerHTML='';list.innerHTML='';empty.style.display='flex';return;}
-  empty.style.display='none';
-  const ts=fc.summary.tierSums;
-  summaryEl.innerHTML=`
-    <div class="cash-card recv">
-      <div class="lbl">📥 近 3 個月預估流入</div>
-      <div class="val green">$${fmtMoney(fc.summary.inflow)}</div>
-      <div class="sub">待收 $${fmtMoney(ts.A)} · 未請款 $${fmtMoney(ts.B)} · 進行中 $${fmtMoney(ts.C)}</div>
+// A 行付款期限 badge（承接原「入帳時程」）
+function ctDueBadge(due){
+  if(!due)return '<span style="color:#999;font-size:.62rem">無期限</span>';
+  const n=dUntil(due);
+  if(n===null)return '';
+  if(n<0)return `<span class="due-badge over">逾期 ${-n} 天</span>`;
+  if(n===0)return `<span class="due-badge today">今天</span>`;
+  if(n<=7)return `<span class="due-badge soon">${n} 天後</span>`;
+  return `<span class="due-badge" style="background:#f1eee6;color:#666">${n} 天後</span>`;
+}
+// 逐月金流圖：綠條=收款(向上)、紅條=付款(向下)、黑線=差額；每月完整數字列在月份下方
+function buildTimelineChart(tl){
+  const colLab={later:'更遠',nodate:'未設日期'};
+  const byKey={};tl.months.forEach(m=>byKey[m.key]=m);
+  const cols=[...tl.monthKeys,'later','nodate'].map(k=>({k,lab:colLab[k]||k,inV:byKey[k]?.inSum||0,outV:byKey[k]?.outSum||0,net:byKey[k]?.net||0}));
+  const W=920,LP=56,RP=12,top=20,plotH=280;
+  const slot=(W-LP-RP)/cols.length;
+  const maxUp=Math.max(1,...cols.map(c=>c.inV));
+  const maxDown=Math.max(0,...cols.map(c=>c.outV));
+  const range=maxUp+maxDown;
+  const y0=top+plotH*maxUp/range;
+  const px=v=>v*plotH/range;
+  // 格線間距（1/2/5×10^n，約 4 條）
+  let step=Math.pow(10,Math.floor(Math.log10(range/4)));
+  const nn=(range/4)/step;
+  step*=nn<=1?1:nn<=2?2:nn<=5?5:10;
+  const wan=v=>{const w=v/10000;return (w%1?w.toFixed(1):w)+'萬';};
+  let grid='';
+  for(let v=step;v<=maxUp;v+=step)grid+=`<line x1="${LP}" y1="${y0-px(v)}" x2="${W-RP}" y2="${y0-px(v)}" stroke="#efece3"/><text x="${LP-6}" y="${y0-px(v)+4}" text-anchor="end">${wan(v)}</text>`;
+  for(let v=step;v<=maxDown;v+=step)grid+=`<line x1="${LP}" y1="${y0+px(v)}" x2="${W-RP}" y2="${y0+px(v)}" stroke="#efece3"/><text x="${LP-6}" y="${y0+px(v)+4}" text-anchor="end">-${wan(v)}</text>`;
+  grid+=`<line x1="${LP}" y1="${y0}" x2="${W-RP}" y2="${y0}" stroke="#d8d2c4"/><text x="${LP-6}" y="${y0+4}" text-anchor="end">0</text>`;
+  let bars='',pts=[],dots='',xlab='',rIn='',rOut='',rNet='';
+  cols.forEach((c,i)=>{
+    const cx=LP+slot*i+slot/2;
+    bars+=`<g><title>${escHtml(c.lab)}　收款 $${fmtMoney(c.inV)}／付款 $${fmtMoney(c.outV)}／差額 ${c.net<0?'-':'+'}$${fmtMoney(Math.abs(c.net))}</title>`;
+    if(c.inV>0)bars+=`<rect x="${cx-24}" y="${y0-px(c.inV)}" width="22" height="${px(c.inV)}" rx="3" fill="#1e6038"/>`;
+    if(c.outV>0)bars+=`<rect x="${cx+2}" y="${y0}" width="22" height="${px(c.outV)}" rx="3" fill="#c53030"/>`;
+    bars+=`<rect x="${cx-slot/2}" y="${top-10}" width="${slot}" height="${plotH+30}" fill="transparent"/></g>`;
+    pts.push(`${cx},${y0-px(c.net)}`);
+    dots+=`<circle cx="${cx}" cy="${y0-px(c.net)}" r="4"/>`;
+    xlab+=`<text x="${cx}" y="${top+plotH+22}">${escHtml(c.lab)}</text>`;
+    rIn+=`<text x="${cx}" y="${top+plotH+47}"${c.inV?'':' fill="#bbb"'}>${fmtMoney(c.inV)}</text>`;
+    rOut+=`<text x="${cx}" y="${top+plotH+64}"${c.outV?'':' fill="#bbb"'}>${fmtMoney(c.outV)}</text>`;
+    rNet+=`<text x="${cx}" y="${top+plotH+82}"${c.net<0?' fill="#c53030"':''}>${c.net<0?'-':'+'}${fmtMoney(Math.abs(c.net))}</text>`;
+  });
+  return `<div class="fc-rows" style="padding:14px 12px 10px;margin-bottom:10px">
+    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;padding:0 6px 8px">
+      <span style="font-size:.76rem;font-weight:800;color:#5a3d10">逐月金流預估</span>
+      <span style="display:flex;gap:14px;margin-left:auto;font-size:.64rem;color:#666;flex-wrap:wrap">
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#1e6038;vertical-align:-1px"></span> 預計收款</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#c53030;vertical-align:-1px"></span> 預計付款</span>
+        <span><span style="display:inline-block;width:14px;height:0;border-top:2px solid #1a1a1a;vertical-align:3px"></span> 金流差額</span>
+      </span>
     </div>
-    <div class="cash-card paid">
-      <div class="lbl">💰 近 3 個月預估收入（齊）</div>
-      <div class="val blue">$${fmtMoney(fc.summary.qiIncome)}</div>
-      <div class="sub">已確定 $${fmtMoney(fc.summary.qiConfirmed)} · 估算 $${fmtMoney(fc.summary.qiEstimated)}</div>
-    </div>
-    <div class="cash-card studio">
-      <div class="lbl">🏠 近 3 個月預估工作室收入</div>
-      <div class="val gold">$${fmtMoney(fc.summary.studioIncome)}</div>
-      <div class="sub">已請款待收 $${fmtMoney(fc.summary.studioConfirmed)} · 估算 $${fmtMoney(fc.summary.studioEstimated)}</div>
-    </div>`;
-  const KEY_LABEL={later:'更遠（3 個月後）',nodate:'未設日期'};
-  list.innerHTML=fc.months.filter(m=>fc.monthKeys.includes(m.key)||m.inflows.length||m.outflows.length).map(m=>{
+    <div style="overflow-x:auto"><svg viewBox="0 0 ${W} 392" style="min-width:820px;width:100%;display:block" role="img" aria-label="逐月金流預估：各月預計收款、預計付款與金流差額">
+      <g font-family="'JetBrains Mono',monospace" font-size="11" fill="#999">${grid}</g>
+      ${bars}
+      <polyline points="${pts.join(' ')}" fill="none" stroke="#1a1a1a" stroke-width="2" stroke-linejoin="round"/>
+      <g fill="#fff" stroke="#1a1a1a" stroke-width="2">${dots}</g>
+      <g font-family="'JetBrains Mono',monospace" font-size="11.5" fill="#666" text-anchor="middle" font-weight="700">${xlab}</g>
+      <line x1="${LP}" y1="${top+plotH+30}" x2="${W-RP}" y2="${top+plotH+30}" stroke="#efece3"/>
+      <g font-family="'JetBrains Mono',monospace" font-size="10.5" text-anchor="end" fill="#888"><text x="50" y="${top+plotH+47}">收款</text><text x="50" y="${top+plotH+64}">付款</text><text x="50" y="${top+plotH+82}" font-weight="700">差額</text></g>
+      <g font-family="'JetBrains Mono',monospace" font-size="10.5" text-anchor="middle">
+        <g fill="#1e6038">${rIn}</g><g fill="#c53030">${rOut}</g><g font-weight="800" fill="#1a1a1a">${rNet}</g>
+      </g>
+    </svg></div>
+  </div>`;
+}
+function renderCashTimeline(){
+  const el=document.getElementById('cash-timeline');if(!el)return;
+  const tl=computeCashTimeline();
+  if(!tl.months.some(m=>m.inflows.length||m.outflows.length)){el.innerHTML='';return;}
+  const ts=tl.summary.tierSums;
+  const net=tl.summary.net;
+  const KEY_LABEL={later:`更遠（${CT_MONTHS} 個月後）`,nodate:'未設日期'};
+  const monthsHtml=tl.months.filter(m=>m.inflows.length||m.outflows.length).map(m=>{
     const pretty=KEY_LABEL[m.key]||m.key.replace('-',' / ');
-    const pill=(t,amt)=>amt>0?`<div class="cash-month-pill" style="background:#fff;border-color:${FC_TIERS[t].color}44"><div class="k" style="color:${FC_TIERS[t].color}">${FC_TIERS[t].name}</div><div class="v" style="color:${FC_TIERS[t].color}">$${fmtMoney(amt)}</div></div>`:'';
+    const pill=(t,amt)=>amt>0?`<div class="cash-month-pill" style="background:#fff;border-color:${CT_TIERS[t].color}44"><div class="k" style="color:${CT_TIERS[t].color}">${CT_TIERS[t].name}</div><div class="v" style="color:${CT_TIERS[t].color}">$${fmtMoney(amt)}</div></div>`:'';
     const sumBy=(arr,t)=>arr.filter(x=>x.tier===t).reduce((s,x)=>s+x.amt,0);
     const rows=[...m.inflows,...m.outflows].map(x=>{
-      const T=FC_TIERS[x.tier];
+      const T=CT_TIERS[x.tier];
       const isOut=T.sign<0;
-      const est=x.tier==='C'||x.tier==='LE';
-      // 案件類的收入行：可一鍵標記「系統外已請款」（歷史案件清理用）
+      const est=x.tier==='C';
+      const badge=x.tier==='A'?ctDueBadge(x.due):'';
+      // A 行：✓ 入帳（原「入帳時程」功能）；B/C 案件行：🗂 標記系統外已請款
+      const payBtn=x.tier==='A'?`<button class="nav-btn primary" style="font-size:.6rem;padding:1px 7px" onclick="event.stopPropagation();openInvPayModal('${x.invId}')">✓ 入帳</button>`:'';
       const extBtn=(x.caseId&&(x.tier==='B'||x.tier==='C'))
         ?`<button class="act-btn" onclick="event.stopPropagation();markCaseBilledExternally('${x.caseId}')" title="標記為系統外已請款 — 從預估／未請款／月結中移除（案件保留）" style="padding:1px 5px;font-size:.62rem;color:#888">🗂</button>`
         :'';
-      return `<div class="fc-line" onclick="${x.click}" title="${est?'估算值 — 依案件設定粗估':''}">
+      return `<div class="fc-line" onclick="${x.click}" title="${est?'估算值 — 依案件金額':''}">
         <div class="fc-lab${est?' est':''}">${escHtml(x.label)}${x.date?`<span class="fc-date">${escHtml(x.date)}</span>`:''}</div>
         <span class="fc-tier" style="color:${T.color};border-color:${T.color}55">${T.name}</span>
-        <div class="fc-amt" style="display:flex;align-items:center;justify-content:flex-end;gap:5px;color:${isOut?'#c53030':'#1e6038'}">${isOut?'-':'+'}$${fmtMoney(x.amt)}${extBtn}</div>
+        <div class="fc-amt" style="color:${isOut?'#c53030':'#1e6038'}">${badge}${isOut?'-':'+'}$${fmtMoney(x.amt)}${payBtn}${extBtn}</div>
       </div>`;
     }).join('');
     return `<section class="cash-month">
@@ -9601,12 +9573,34 @@ function renderForecast(){
         </div>
         <div class="cmh-pills">
           ${pill('A',sumBy(m.inflows,'A'))}${pill('B',sumBy(m.inflows,'B'))}${pill('C',sumBy(m.inflows,'C'))}
-          ${pill('O',sumBy(m.outflows,'O'))}${pill('L',sumBy(m.outflows,'L'))}${pill('LE',sumBy(m.outflows,'LE'))}
+          ${pill('O',sumBy(m.outflows,'O'))}${pill('SAL',sumBy(m.outflows,'SAL'))}${pill('PEXP',sumBy(m.outflows,'PEXP'))}${pill('L',sumBy(m.outflows,'L'))}
         </div>
       </div>
-      <div class="fc-rows">${rows||'<div style="padding:10px;text-align:center;color:#999;font-size:.7rem">此月份無預估項目</div>'}</div>
+      <div class="fc-rows">${rows}</div>
     </section>`;
   }).join('');
+  el.innerHTML=`
+    <div style="padding:2px 14px 0;font-size:.76rem;font-weight:800;color:#1e6038">📅 金流時間軸 <span style="font-weight:400;color:#888;font-size:.62rem">已請款待收＋未請款預估＋支出，按月排列 — 預估口徑，不受篩選影響</span></div>
+    <div class="cash-summary" style="padding-top:8px;padding-bottom:8px">
+      <div class="cash-card recv">
+        <div class="lbl">📥 近 ${CT_MONTHS} 個月預估流入</div>
+        <div class="val green">$${fmtMoney(tl.summary.inflow)}</div>
+        <div class="sub">待收 $${fmtMoney(ts.A)} · 已完成未請款 $${fmtMoney(ts.B)} · 進行中 $${fmtMoney(ts.C)}${tl.summary.overdueA>0?` · <span style="color:#c53030;font-weight:700">含逾期 $${fmtMoney(tl.summary.overdueA)}</span>`:''}</div>
+      </div>
+      <div class="cash-card" style="border-color:#e8aaaa;background:#fdf3f3">
+        <div class="lbl">📤 近 ${CT_MONTHS} 個月預估支出</div>
+        <div class="val" style="color:#c53030">$${fmtMoney(tl.summary.outflow)}</div>
+        <div class="sub">外包 $${fmtMoney(ts.O)} · 薪資 $${fmtMoney(ts.SAL)} · 專案支出 $${fmtMoney(ts.PEXP)} · 歷史勞務 $${fmtMoney(ts.L)}</div>
+      </div>
+      <div class="cash-card">
+        <div class="lbl">🏢 預估淨額（${CT_MONTHS} 個月）</div>
+        <div class="val" style="color:${net>=0?'#1e6038':'#c53030'}">${net<0?'-':'+'}$${fmtMoney(Math.abs(net))}</div>
+        <div class="sub">現金流口徑 — 未含代繳稅與 invoice 層專案支出</div>
+      </div>
+    </div>
+    <div style="padding:0 14px">${buildTimelineChart(tl)}</div>
+    <div class="cash-list" style="padding-bottom:6px">${monthsHtml}</div>
+    <div style="padding:0 14px 10px;font-size:.6rem;color:#999">時間軸為現金流口徑（收款毛額）；下方月份區塊的公司制淨利為權責口徑，兩者數字不同屬正常。</div>`;
 }
 
 // ═══════════════════════════════════════════════════
