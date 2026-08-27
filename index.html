@@ -1115,6 +1115,13 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
           <input class="form-input" id="os-rush-fee" type="number" placeholder="0" value="0">
         </div>
       </div>
+      <div class="form-row" style="margin-top:8px">
+        <div class="form-group">
+          <label class="form-label">時薪（元/h — 計時工作用，可留 0）</label>
+          <input class="form-input" id="os-hourly" type="number" placeholder="0" value="0">
+        </div>
+        <div class="form-group"></div>
+      </div>
     </div>
 
     <div class="cl-section">
@@ -1359,6 +1366,11 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
             <button type="button" class="qi-master-trigger" id="f-outsource-tier-trigger"><span class="qi-master-trigger-text">— 先選人員 —</span><span class="qi-master-trigger-arrow">▼</span></button>
           </div>
         </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:6px;font-size:.74rem">
+        <span style="color:#1e6038;font-weight:700;font-size:.68rem">計時</span>
+        <input class="form-input" id="f-outsource-hours" type="number" step="0.5" min="0" placeholder="0" style="width:90px;font-family:'JetBrains Mono',monospace" oninput="updateFOutsourceCost()">
+        <span style="color:#666">小時 × 時薪 <span id="f-outsource-rate-hint" style="font-family:'JetBrains Mono',monospace">$0</span>/h（可與級距併用；純計時就不選級距）</span>
       </div>
       <div style="display:flex;gap:14px;align-items:center;margin-top:6px">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.78rem">
@@ -1709,7 +1721,7 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">類別</label>
-        <select class="form-select" id="pe-cat"><option>器材租借</option><option>場地租借</option><option>交通</option><option>其他</option></select>
+        <select class="form-select" id="pe-cat"><option>器材租借</option><option>場地租借</option><option>交通</option><option>助理/人力</option><option>其他</option></select>
       </div>
       <div class="form-group">
         <label class="form-label">金額</label>
@@ -2343,15 +2355,17 @@ function ensureOutsourcer(o){
   if(!o.pricingTiers)o.pricingTiers=[];
   if(o.rushDays==null)o.rushDays=3;
   if(o.rushFee==null)o.rushFee=0;
+  if(o.hourlyRate==null)o.hourlyRate=0;
 }
 function computeOutsourceCost(cs){
   if(!cs.isOutsourced||!cs.outsource)return cs.cost||0;
   const o=S.outsourcers[cs.outsource.outsourcerId];
   if(!o)return cs.cost||0;
   const tier=o.pricingTiers?.find(t=>t.label===cs.outsource.tierLabel);
-  if(!tier)return cs.cost||0;
+  const hourly=Math.round((o.hourlyRate||0)*(parseFloat(cs.outsource.hours)||0));
+  if(!tier&&!hourly)return cs.cost||0;
   const rush=cs.outsource.isRush?(o.rushFee||0):0;
-  return (tier.amount||0)+rush;
+  return (tier?(tier.amount||0):0)+rush+hourly;
 }
 // Generate next invoice number for {prefix}-{YYYYMM} (auto serial -2, -3 if duplicates exist)
 function nextInvoiceNumber(prefix,billingMonth){
@@ -2977,8 +2991,9 @@ function toggleOutsource(id){
   if(c.isOutsourced&&c.outsource){
     const o=S.outsourcers[c.outsource.outsourcerId];
     const tier=o?.pricingTiers?.find(t=>t.label===c.outsource.tierLabel);
-    if(tier){
-      const auto=(tier.amount||0)+(c.outsource.isRush?(o.rushFee||0):0);
+    const hourly=Math.round((o?.hourlyRate||0)*(parseFloat(c.outsource.hours)||0));
+    if(tier||hourly){
+      const auto=(tier?(tier.amount||0):0)+(c.outsource.isRush?(o.rushFee||0):0)+hourly;
       if(auto>0&&(c.cost||0)===auto)c.cost=0;
     }
   }
@@ -3092,6 +3107,7 @@ function openAddCase(){
   document.getElementById('f-outsourced').checked=false;
   document.getElementById('f-cost').value='';
   document.getElementById('f-outsourcer-id').value='';
+  document.getElementById('f-outsource-hours').value='';
   document.getElementById('f-outsource-tier').value='';
   document.getElementById('f-outsource-rush').checked=false;
   // 新案件預設：外包成本由勞務方自付（先分後扣）
@@ -3172,6 +3188,7 @@ function openEditCase(id){
   document.getElementById('f-outsourcer-id').value=c.outsource?.outsourcerId||'';
   document.getElementById('f-outsource-tier').value=c.outsource?.tierLabel||'';
   document.getElementById('f-outsource-rush').checked=!!c.outsource?.isRush;
+  document.getElementById('f-outsource-hours').value=c.outsource?.hours||'';
   // 外包成本歸屬：舊資料無欄位 → project（維持歷史分潤數字不變）
   const bearer=c.outsource?.costBearer==='owner'?'owner':'project';
   document.getElementById('f-cost-bearer-owner').checked=bearer==='owner';
@@ -3599,11 +3616,15 @@ function fOutsourceFormCost(){
   if(!o)return 0;
   const tier=o.pricingTiers?.find(t=>t.label===document.getElementById('f-outsource-tier').value);
   const rush=document.getElementById('f-outsource-rush').checked?(o.rushFee||0):0;
-  return (tier?(tier.amount||0):0)+rush;
+  const hours=parseFloat(document.getElementById('f-outsource-hours')?.value)||0;
+  const hourly=Math.round((o.hourlyRate||0)*hours);
+  return (tier?(tier.amount||0):0)+rush+hourly;
 }
 function updateFOutsourceCost(){
   const oid=document.getElementById('f-outsourcer-id').value;
   const o=oid?S.outsourcers[oid]:null;
+  const rh=document.getElementById('f-outsource-rate-hint');
+  if(rh)rh.textContent='$'+fmtMoney(o?.hourlyRate||0);
   if(!o){document.getElementById('f-outsource-cost-display').textContent='$0';return;}
   const total=fOutsourceFormCost();
   document.getElementById('f-outsource-cost-display').textContent='$'+fmtMoney(total);
@@ -3705,6 +3726,7 @@ function saveCase(){
       outsourcerId:document.getElementById('f-outsourcer-id').value||null,
       tierLabel:document.getElementById('f-outsource-tier').value||null,
       isRush:document.getElementById('f-outsource-rush').checked,
+      hours:parseFloat(document.getElementById('f-outsource-hours').value)||0,
       costBearer:document.getElementById('f-cost-bearer-owner').checked?'owner':'project',
       paidAt:S.editCaseId?(S.cases[S.editCaseId]?.outsource?.paidAt??null):null,
     }:null,
@@ -3794,6 +3816,7 @@ function renderOutsourcers(){
       <div class="client-card-row"><b>銀行</b>${escHtml(o.bank||'—')}${bankLast4?` 末4: ${bankLast4}`:''}</div>
       <div class="client-card-row"><b>費率</b><span style="font-size:.66rem;color:#666">${tiersBrief||'未設定'}</span></div>
       ${o.rushFee?`<div class="client-card-row"><b>急件</b><span style="color:#a86a00;font-size:.66rem">${o.rushDays} 天內 +$${fmtMoney(o.rushFee)}</span></div>`:''}
+      ${o.hourlyRate?`<div class="client-card-row"><b>時薪</b><span style="color:#1e6038;font-size:.66rem">$${fmtMoney(o.hourlyRate)}/h（計時）</span></div>`:''}
       <div class="client-card-actions" onclick="event.stopPropagation()">
         ${useCount
           ?`<button class="act-btn" onclick="openOutsourcerCases('${o.id}')" style="margin-left:auto;font-size:.7rem;color:#1e6038">${useCount} 案件使用 →</button>`
@@ -3846,6 +3869,7 @@ function openAddOutsourcer(){
   ['os-name','os-contact','os-bank','os-bank-account','os-bank-account-name','os-cloud-url','os-naming-todo','os-naming-done','os-notes'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
   document.getElementById('os-rush-days').value=3;
   document.getElementById('os-rush-fee').value=0;
+  document.getElementById('os-hourly').value=0;
   _osTiers=[{label:'',amount:0}];
   renderOsTiers();
   openM('outsourcer-modal');
@@ -3868,6 +3892,7 @@ function openEditOutsourcer(id){
   document.getElementById('os-notes').value=o.notes||'';
   document.getElementById('os-rush-days').value=o.rushDays??3;
   document.getElementById('os-rush-fee').value=o.rushFee??0;
+  document.getElementById('os-hourly').value=o.hourlyRate??0;
   _osTiers=(o.pricingTiers||[]).map(t=>({label:t.label||'',amount:t.amount||0}));
   if(!_osTiers.length)_osTiers.push({label:'',amount:0});
   renderOsTiers();
@@ -3903,6 +3928,7 @@ function saveOutsourcer(){
     pricingTiers:tiers,
     rushDays:parseInt(document.getElementById('os-rush-days').value)||3,
     rushFee:parseInt(document.getElementById('os-rush-fee').value)||0,
+    hourlyRate:parseInt(document.getElementById('os-hourly').value)||0,
     notes:document.getElementById('os-notes').value.trim(),
     createdAt:S.editOutsourcerId?S.outsourcers[S.editOutsourcerId]?.createdAt:Date.now(),
     updatedAt:Date.now(),
@@ -8839,7 +8865,7 @@ function renderCashInvoiceRowCompany(inv){
           }
           return `<div style="display:grid;grid-template-columns:120px 1fr 110px 52px;gap:6px;align-items:center;margin-bottom:4px;background:#fff;border:1px solid #7de89a;border-radius:6px;padding:4px">
             <select onchange="updateInvExpense('${inv.id}','${e.id}','category',this.value)" style="font-size:.68rem;padding:3px 6px;border:1px solid #e3e0d6;border-radius:4px;background:#fff;font-family:inherit">
-              ${['器材租借','場地租借','其他'].map(cat=>`<option value="${cat}" ${e.category===cat?'selected':''}>${cat}</option>`).join('')}
+              ${['器材租借','場地租借','交通','助理/人力','其他'].map(cat=>`<option value="${cat}" ${e.category===cat?'selected':''}>${cat}</option>`).join('')}
             </select>
             <input type="text" value="${escHtml(e.label||'')}" placeholder="說明" onchange="updateInvExpense('${inv.id}','${e.id}','label',this.value)" style="font-size:.68rem;padding:3px 6px;border:1px solid #e3e0d6;border-radius:4px;background:#fff;font-family:inherit">
             <input type="number" value="${e.amount||0}" onchange="updateInvExpense('${inv.id}','${e.id}','amount',parseInt(this.value)||0)" style="font-size:.68rem;padding:3px 6px;border:1px solid #e3e0d6;border-radius:4px;background:#fff;font-family:'JetBrains Mono',monospace;text-align:right">
@@ -9047,7 +9073,7 @@ function renderCashInvoiceRow(inv){
           // 編輯模式 — 完整輸入欄 + 完成/刪除
           return `<div style="display:grid;grid-template-columns:120px 1fr 110px 52px;gap:6px;align-items:center;margin-bottom:4px;background:#fff;border:1px solid #7de89a;border-radius:6px;padding:4px">
             <select onchange="updateInvExpense('${inv.id}','${e.id}','category',this.value)" style="font-size:.68rem;padding:3px 6px;border:1px solid #e3e0d6;border-radius:4px;background:#fff;font-family:inherit">
-              ${['器材租借','場地租借','其他'].map(cat=>`<option value="${cat}" ${e.category===cat?'selected':''}>${cat}</option>`).join('')}
+              ${['器材租借','場地租借','交通','助理/人力','其他'].map(cat=>`<option value="${cat}" ${e.category===cat?'selected':''}>${cat}</option>`).join('')}
             </select>
             <input type="text" value="${escHtml(e.label||'')}" placeholder="說明（例：三創12F 一日）" onchange="updateInvExpense('${inv.id}','${e.id}','label',this.value)" style="font-size:.68rem;padding:3px 6px;border:1px solid #e3e0d6;border-radius:4px;background:#fff;font-family:inherit">
             <input type="number" value="${e.amount||0}" onchange="updateInvExpense('${inv.id}','${e.id}','amount',parseInt(this.value)||0)" style="font-size:.68rem;padding:3px 6px;border:1px solid #e3e0d6;border-radius:4px;background:#fff;font-family:'JetBrains Mono',monospace;text-align:right">
