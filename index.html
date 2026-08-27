@@ -780,6 +780,7 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
         <div class="sb-group-title">收款開票</div>
         <div class="sb-item" data-tab="invoices"><span class="ico">🧾</span>Invoice</div>
         <div class="sb-item" data-tab="cashflow"><span class="ico">💵</span>金流</div>
+        <div class="sb-item" data-tab="fixedcosts"><span class="ico">🏠</span>固定成本</div>
         <div class="sb-item" data-tab="assessment"><span class="ico">📊</span>專案管理</div>
       </div>
     </div>
@@ -1016,6 +1017,19 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
     </div>
     <!-- 外包應付款 -->
     <div id="cash-outsource-section"></div>
+  </div>
+</div>
+
+<!-- TAB: FIXED COSTS -->
+<div class="tab-panel" id="tab-fixedcosts">
+  <div class="scroll-body">
+    <div class="cash-summary" id="fx-summary"></div>
+    <div style="padding:0 14px 14px" id="fx-list"></div>
+    <div id="fx-empty" class="empty-state" style="display:none">
+      <div class="empty-icon">🏠</div>
+      <div class="empty-title">尚無固定成本項目</div>
+      <div style="font-size:.8rem">點右上「＋ 新增固定成本」記錄房租、訂閱、保險等每月／每年固定支出</div>
+    </div>
   </div>
 </div>
 
@@ -1741,6 +1755,42 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
   </div>
 </div>
 
+<!-- 固定成本 MODAL -->
+<div class="modal-overlay" id="fx-modal">
+  <div class="modal" style="width:400px">
+    <div class="modal-title" id="fx-modal-title">🏠 新增固定成本</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">分類</label>
+        <select class="form-select" id="fx-cat"><option>房租/空間</option><option>軟體訂閱</option><option>器材/攤提</option><option>保險</option><option>會計/行政</option><option>其他</option></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">週期</label>
+        <select class="form-select" id="fx-cycle"><option value="m">每月</option><option value="y">每年</option></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">項目名稱</label>
+        <input class="form-input" id="fx-label" placeholder="例：工作室房租">
+      </div>
+      <div class="form-group">
+        <label class="form-label">金額</label>
+        <input class="form-input" id="fx-amt" type="number" inputmode="numeric" style="font-family:'JetBrains Mono',monospace">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">備註</label>
+      <input class="form-input" id="fx-note" placeholder="（選填）例：每年 3 月續約">
+    </div>
+    <div id="fx-err" style="font-size:.66rem;color:#c53030;min-height:15px"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeM('fx-modal')">取消</button>
+      <button class="btn-primary" id="fx-confirm-btn" onclick="confirmFixedCost()">加入</button>
+    </div>
+  </div>
+</div>
+
 <!-- 記工時 MODAL（專案管理頁） -->
 <div class="modal-overlay" id="as-hours-modal">
   <div class="modal" style="width:380px">
@@ -2414,7 +2464,7 @@ function _renderBlocked(){
   if(document.querySelector('.modal-overlay.open'))return true;
   const ae=document.activeElement;
   return !!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)
-    &&ae.closest('#cases-tbody,#clients-grid,#wi-tbody,#inv-list,#inv-editor-wrap,#inv-preview-wrap,#cash-list,#cash-summary,#outsourcers-grid,#quote-main,#as-root'));
+    &&ae.closest('#cases-tbody,#clients-grid,#wi-tbody,#inv-list,#inv-editor-wrap,#inv-preview-wrap,#cash-list,#cash-summary,#fx-list,#outsourcers-grid,#quote-main,#as-root'));
 }
 function _flushPendingRender(){
   if(_pendingRender&&!_renderBlocked()){_pendingRender=false;renderCurrentTab();}
@@ -2467,6 +2517,7 @@ const TAB_META={
   quotations:{ico:'💰',label:'報價單',addBtn:{txt:'＋ 新增報價單',fn:'openNewQuoteClientModal'}},
   invoices:{ico:'🧾',label:'Invoice',addBtn:null},
   cashflow:{ico:'💵',label:'金流',addBtn:null},
+  fixedcosts:{ico:'🏠',label:'固定成本',addBtn:{txt:'＋ 新增固定成本',fn:'openAddFixedCost'}},
   assessment:{ico:'📊',label:'專案管理（體檢）',addBtn:null},
 };
 // ── MOBILE SIDEBAR DRAWER ──
@@ -2519,6 +2570,7 @@ function renderCurrentTab(){
   else if(n==='quotations')renderQuotations();
   else if(n==='invoices')renderInvoices();
   else if(n==='cashflow')renderCashflow();
+  else if(n==='fixedcosts')renderFixedCosts();
   else if(n==='assessment')renderAssessment();
   else if(n==='outsourcers')renderOutsourcers();
 }
@@ -8460,6 +8512,130 @@ function delAsLog(caseId,logId){
 }
 
 // ═══════════════════════════════════════════════════
+// ── 固定成本頁（存 settings/fixedCosts；月攤提＝年繳/12）──
+function fixedCostList(){
+  return Object.values(S.globalSettings?.fixedCosts||{}).filter(Boolean)
+    .sort((a,b)=>((a.category||'').localeCompare(b.category||'','zh-Hant'))||(b.amount||0)-(a.amount||0));
+}
+function fxMonthly(it){return it.cycle==='y'?(it.amount||0)/12:(it.amount||0);}
+function renderFixedCosts(){
+  const sum=document.getElementById('fx-summary');
+  const list=document.getElementById('fx-list');
+  const empty=document.getElementById('fx-empty');
+  if(!sum||!list)return;
+  const items=fixedCostList();
+  if(!items.length){sum.innerHTML='';list.innerHTML='';empty.style.display='flex';return;}
+  empty.style.display='none';
+  const act=items.filter(it=>it.active!==false);
+  const monthly=act.reduce((s,it)=>s+fxMonthly(it),0);
+  const annual=Math.round(monthly*12);
+  const beFixed=(S.globalSettings?.breakeven?.fixed)||0;
+  sum.innerHTML=`
+    <div class="cash-card" style="border-color:#e8aaaa;background:#fdf3f3">
+      <div class="lbl" style="color:#c53030">📤 每月固定成本</div>
+      <div class="val" style="color:#c53030">$${fmtMoney(Math.round(monthly))}</div>
+      <div class="sub">${act.length} 項啟用${items.length-act.length?` · ${items.length-act.length} 項停用`:''}</div>
+    </div>
+    <div class="cash-card">
+      <div class="lbl">📅 年化合計</div>
+      <div class="val">$${fmtMoney(annual)}</div>
+      <div class="sub">月繳 ×12 ＋ 年繳</div>
+    </div>
+    <div class="cash-card">
+      <div class="lbl">⚖️ 體檢「年固定成本」</div>
+      <div class="val" style="color:${Math.abs(beFixed-annual)<1?'#1e6038':'#a86a00'}">$${fmtMoney(beFixed)}</div>
+      <div class="sub" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${Math.abs(beFixed-annual)<1?'已與年化合計一致':'與年化合計不同'}<button class="nav-btn" style="font-size:.6rem;padding:1px 8px" onclick="fxSyncBreakeven()">同步 → 體檢</button></div>
+    </div>`;
+  const CYCLE_LABEL={m:'每月',y:'每年'};
+  let lastCat=null,rows='';
+  items.forEach(it=>{
+    const cat=it.category||'其他';
+    if(cat!==lastCat){lastCat=cat;rows+=`<div style="background:#faf6ee;border-top:1px solid var(--line);padding:5px 12px;font-size:.64rem;font-weight:800;color:#5a3d10">${escHtml(cat)}</div>`;}
+    const off=it.active===false;
+    rows+=`<div class="fc-line" style="grid-template-columns:1fr auto auto auto auto;${off?'opacity:.5':''}" onclick="openEditFixedCost('${it.id}')">
+      <div class="fc-lab"><b>${escHtml(it.label||'')}</b>${it.note?`<span class="fc-date">${escHtml(it.note)}</span>`:''}</div>
+      <span class="fc-tier" style="color:${it.cycle==='y'?'#1e4a80':'#5a3d80'};border-color:${it.cycle==='y'?'#1e4a80':'#5a3d80'}55">${CYCLE_LABEL[it.cycle]||'每月'} $${fmtMoney(it.amount||0)}</span>
+      <div class="fc-amt" style="color:#c53030">-$${fmtMoney(Math.round(fxMonthly(it)))}/月</div>
+      <label onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;font-size:.62rem;color:${off?'#999':'#1e6038'};cursor:pointer"><input type="checkbox" ${off?'':'checked'} onchange="toggleFixedCostActive('${it.id}',this.checked)" style="accent-color:#1e6038;margin:0">計入</label>
+      <button class="act-btn del" onclick="event.stopPropagation();delFixedCost('${it.id}')" title="刪除">✕</button>
+    </div>`;
+  });
+  list.innerHTML=`<div class="fc-rows">${rows}</div>
+    <div style="padding:8px 2px 0;font-size:.6rem;color:#999">點列可編輯；「計入」取消勾選＝暫停此項（不計入合計）。此頁僅供成本盤點與體檢連動，不影響金流頁數字。</div>`;
+}
+let _fxEditId=null;
+function openAddFixedCost(){
+  _fxEditId=null;
+  document.getElementById('fx-modal-title').textContent='🏠 新增固定成本';
+  document.getElementById('fx-cat').value='房租/空間';
+  document.getElementById('fx-cycle').value='m';
+  document.getElementById('fx-label').value='';
+  document.getElementById('fx-amt').value='';
+  document.getElementById('fx-note').value='';
+  document.getElementById('fx-err').textContent='';
+  document.getElementById('fx-confirm-btn').textContent='加入';
+  openM('fx-modal');
+}
+function openEditFixedCost(id){
+  const it=(S.globalSettings?.fixedCosts||{})[id];if(!it)return;
+  _fxEditId=id;
+  document.getElementById('fx-modal-title').textContent='🏠 編輯固定成本';
+  document.getElementById('fx-cat').value=it.category||'其他';
+  document.getElementById('fx-cycle').value=it.cycle==='y'?'y':'m';
+  document.getElementById('fx-label').value=it.label||'';
+  document.getElementById('fx-amt').value=it.amount||'';
+  document.getElementById('fx-note').value=it.note||'';
+  document.getElementById('fx-err').textContent='';
+  document.getElementById('fx-confirm-btn').textContent='儲存';
+  openM('fx-modal');
+}
+function confirmFixedCost(){
+  if(!_fbReady)return;
+  const label=document.getElementById('fx-label').value.trim();
+  const amt=parseInt(document.getElementById('fx-amt').value)||0;
+  if(!label||amt<=0){document.getElementById('fx-err').textContent='請填寫項目名稱與金額';return;}
+  const prev=_fxEditId?(S.globalSettings?.fixedCosts||{})[_fxEditId]:null;
+  const it={id:_fxEditId||uid(),label,amount:amt,
+    category:document.getElementById('fx-cat').value,
+    cycle:document.getElementById('fx-cycle').value==='y'?'y':'m',
+    note:document.getElementById('fx-note').value.trim(),
+    active:prev?prev.active!==false:true};
+  S.globalSettings=S.globalSettings||{};S.globalSettings.fixedCosts=S.globalSettings.fixedCosts||{};
+  S.globalSettings.fixedCosts[it.id]=it;  // optimistic
+  _db.ref(`${ROOT}/settings/fixedCosts/${it.id}`).set(_stampBy(it));
+  closeM('fx-modal');
+  renderFixedCosts();
+  toast(_fxEditId?'已更新固定成本':'已加入固定成本');
+}
+function toggleFixedCostActive(id,checked){
+  if(!_fbReady)return;
+  const it=(S.globalSettings?.fixedCosts||{})[id];if(!it)return;
+  it.active=!!checked;
+  _db.ref(`${ROOT}/settings/fixedCosts/${id}`).set(_stampBy(it));
+  renderFixedCosts();
+}
+function delFixedCost(id){
+  const it=(S.globalSettings?.fixedCosts||{})[id];if(!it)return;
+  showConf('刪除固定成本？',`「${it.label||''} $${fmtMoney(it.amount||0)}」將自清單移除。`,()=>{
+    delete S.globalSettings.fixedCosts[id];
+    _db.ref(`${ROOT}/settings/fixedCosts/${id}`).remove();
+    renderFixedCosts();
+  });
+}
+function fxSyncBreakeven(){
+  const act=fixedCostList().filter(it=>it.active!==false);
+  const annual=Math.round(act.reduce((s,it)=>s+fxMonthly(it),0)*12);
+  showConf('同步到體檢？',`把年化合計 $${fmtMoney(annual)} 寫入體檢頁「年固定成本」欄位（原值 $${fmtMoney(S.globalSettings?.breakeven?.fixed||0)}）？`,()=>{
+    if(!_fbReady)return;
+    const cfg=Object.assign({},BE_DEFAULT,S.globalSettings?.breakeven||{});
+    cfg.fixed=annual;
+    S.globalSettings=S.globalSettings||{};S.globalSettings.breakeven=cfg;
+    _db.ref(`${ROOT}/settings/breakeven`).set(_stampBy(cfg));
+    renderFixedCosts();
+    toast('已同步 — 體檢「年固定成本」已更新');
+  });
+}
+
 // ── 公司制（2026-08 起）──────────────────────────────
 // 依 billingMonth 自動分流：≥ 2026-08 → 公司出入帳檢視（收入全數
 // 入公司帳、齊/巫為薪資支出、不再分潤）；以前 → 現行分潤檢視，
