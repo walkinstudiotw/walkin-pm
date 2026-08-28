@@ -9437,8 +9437,15 @@ function renderOutsourcePayables(){
       '全部外包人員');
   }
 }
-// 分月：group by dueDate YYYY-MM, each month shows totals + case rows.
+// 分月：group by dueDate YYYY-MM — 單月翻頁（‹ › 切換，與時間軸月卡一致）。
 // Undated cases fall into '(未設交期)'.
+let _osSel=null,_osKeys=[];
+function osNavMonth(d){
+  const i=_osKeys.indexOf(_osSel)+d;
+  if(i<0||i>=_osKeys.length)return;
+  _osSel=_osKeys[i];
+  renderOutsourcePayables();
+}
 function renderOutsourceByMonth(cases){
   const byMonth=new Map();
   cases.forEach(cs=>{
@@ -9446,23 +9453,35 @@ function renderOutsourceByMonth(cases){
     if(!byMonth.has(m))byMonth.set(m,[]);
     byMonth.get(m).push(cs);
   });
-  // Sort months desc, undated last
+  // Sort months asc（‹ 較早 / › 較晚）, undated last
   const monthKeys=[...byMonth.keys()].sort((a,b)=>{
     if(a==='(未設交期)')return 1;
     if(b==='(未設交期)')return -1;
-    return b.localeCompare(a);
+    return a.localeCompare(b);
   });
-  return monthKeys.map(m=>{
+  _osKeys=monthKeys;
+  // 預設：當月，無則最近的未來月份，再無則最後一個（最近的過去）
+  if(!_osSel||!_osKeys.includes(_osSel)){
+    const now=new Date();
+    const curYM=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    _osSel=_osKeys.find(k=>k!=='(未設交期)'&&k>=curYM)||_osKeys[_osKeys.length-1]||null;
+  }
+  return monthKeys.filter(m=>m===_osSel).map(m=>{
     const csArr=byMonth.get(m).sort((a,b)=>(b.dueDate||'').localeCompare(a.dueDate||''));
     let total=0,paid=0;
     csArr.forEach(cs=>{const c=computeOutsourceCost(cs);total+=c;if(cs.outsource?.paidAt)paid+=c;});
     const pend=total-paid;
     const mPretty=m.includes('-')?m.replace('-',' / '):m;
     const rows=csArr.map(renderOutsourceCaseRow).join('');
+    const idx=_osKeys.indexOf(m);
+    const navBtn=(d,sym)=>{
+      const ok=idx+d>=0&&idx+d<_osKeys.length;
+      return `<button class="nav-btn" style="font-size:.8rem;padding:2px 10px;${ok?'':'opacity:.3;cursor:default'}" ${ok?`onclick="osNavMonth(${d})"`:''} title="${d<0?'上個月份':'下個月份'}">${sym}</button>`;
+    };
     return `<section class="cash-month">
       <div class="cash-month-header">
         <div class="cmh-top">
-          <div class="cmh-title">📅 ${escHtml(mPretty)}</div>
+          <div class="cmh-title" style="display:flex;align-items:center;gap:8px">${navBtn(-1,'‹')}📅 ${escHtml(mPretty)}${navBtn(1,'›')}<span style="font-size:.6rem;font-weight:400;color:#999">${idx+1}/${_osKeys.length}</span></div>
           <div class="cmh-meta">${csArr.length} 案 · 應付 <b>$${fmtMoney(total)}</b></div>
         </div>
         <div class="cmh-pills">
