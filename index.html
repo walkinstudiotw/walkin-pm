@@ -8941,7 +8941,7 @@ function delProjExp(caseId,expId){
 }
 
 // ── 公司制月份區塊（月損益 + 薪資 + invoice 列）──
-function renderCompanyMonthSection(month,invs){
+function renderCompanyMonthSection(month,invs,nav){
   let sub=0,tax=0,cost=0,net=0,exp=0,recvAmt=0,sentAmt=0,recvN=0,sentN=0;
   invs.forEach(inv=>{
     const c=computeInvoiceCompany(inv);
@@ -8959,7 +8959,7 @@ function renderCompanyMonthSection(month,invs){
   return `<section class="cash-month">
     <div class="cash-month-header" style="background:var(--green-soft);border-color:var(--green-line)">
       <div class="cmh-top">
-        <div class="cmh-title" style="color:#1e6038">🏢 ${escHtml(monthPretty)} <span style="font-size:.6rem;font-weight:400;color:#666">公司制</span></div>
+        <div class="cmh-title" style="color:#1e6038;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${nav?.pre||''}🏢 ${escHtml(monthPretty)} <span style="font-size:.6rem;font-weight:400;color:#666">公司制</span>${nav?.post||''}</div>
         <div class="cmh-meta">${invs.length} 張 · <b>$${fmtMoney(sub)}</b></div>
       </div>
       <div class="cmh-pills">
@@ -9190,13 +9190,14 @@ function renderCashflow(){
       const ok=idx+d>=0&&idx+d<keys.length;
       return `<button class="nav-btn" style="font-size:.8rem;padding:2px 10px;${ok?'':'opacity:.3;cursor:default'}" ${ok?`onclick="clNavMonth(${d})"`:''} title="${d<0?'上個月份':'下個月份'}">${sym}</button>`;
     };
-    const pager=`<div style="display:flex;align-items:center;gap:8px;padding:2px 2px 10px;flex-wrap:wrap">
-      ${navBtn(-1,'‹')}<span style="font-family:'JetBrains Mono',monospace;font-weight:800;color:#5a3d10">📅 ${escHtml(_clSel==='(未指定)'?_clSel:_clSel.replace('-',' / '))}</span>${navBtn(1,'›')}
-      <span style="font-size:.6rem;color:#999">${idx+1}/${keys.length}</span>
-      ${un?`<span style="background:var(--amber-soft);border:1px solid var(--amber-line);color:var(--amber);border-radius:8px;padding:0 6px;font-size:.6rem;font-weight:700">${un} 未收</span>`:''}
-      ${unOther?`<span style="font-size:.62rem;color:var(--amber)">其他月份另有 ${unOther} 張未收</span>`:''}
-    </div>`;
-    list.innerHTML=recvHeader+pager+renderCashMonthSection(_clSel,buckets.get(_clSel));
+    // 翻頁箭頭嵌入月份卡標題（與應付款明細同款設計）
+    const nav={
+      pre:navBtn(-1,'‹'),
+      post:`${navBtn(1,'›')}<span style="font-size:.6rem;font-weight:400;color:#999">${idx+1}/${keys.length}</span>`
+        +(un?`<span style="background:var(--amber-soft);border:1px solid var(--amber-line);color:var(--amber);border-radius:8px;padding:0 6px;font-size:.6rem;font-weight:700">${un} 未收</span>`:'')
+        +(unOther?`<span style="font-size:.62rem;font-weight:400;color:var(--amber)">其他月份另有 ${unOther} 張未收</span>`:'')
+    };
+    list.innerHTML=recvHeader+renderCashMonthSection(_clSel,buckets.get(_clSel),nav);
   }else{
     // 指定公司制月份時：薪資區塊置頂
     const salBlock=(monthSel!=='all'&&monthSel>=SALARY_ERA)?renderSalaryBlock(monthSel):'';
@@ -9316,8 +9317,8 @@ function renderCashInvoiceRow(inv){
   </div>`;
 }
 // Render one month bucket: header with mini agg + the month's invoice cards.
-function renderCashMonthSection(month,invs){
-  if(isCompanyMonth(month))return renderCompanyMonthSection(month,invs);
+function renderCashMonthSection(month,invs,nav){
+  if(isCompanyMonth(month))return renderCompanyMonthSection(month,invs,nav);
   const a=computeMonthlyAgg(invs);
   const monthPretty=month.includes('-')?month.replace('-',' / '):month;
   const total=(a.sent.amt||0)+(a.paid.amt||0);
@@ -9335,7 +9336,7 @@ function renderCashMonthSection(month,invs){
   return `<section class="cash-month">
     <div class="cash-month-header">
       <div class="cmh-top">
-        <div class="cmh-title">📅 ${escHtml(monthPretty)}</div>
+        <div class="cmh-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${nav?.pre||''}📅 ${escHtml(monthPretty)}${nav?.post||''}</div>
         <div class="cmh-meta">${invs.length} 張 · <b>$${fmtMoney(total)}</b></div>
       </div>
       <div class="cmh-pills">
