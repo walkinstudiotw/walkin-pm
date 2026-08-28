@@ -9334,9 +9334,9 @@ function renderCashMonthSection(month,invs,nav){
     :'';
   const rowsHtml=invs.map(renderCashInvoiceRow).join('');
   return `<section class="cash-month">
-    <div class="cash-month-header">
+    <div class="cash-month-header" style="background:#fff8ee;border-color:#f0c878">
       <div class="cmh-top">
-        <div class="cmh-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${nav?.pre||''}📅 ${escHtml(monthPretty)}${nav?.post||''}</div>
+        <div class="cmh-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:#a86a00">${nav?.pre||''}📅 ${escHtml(monthPretty)}${nav?.post||''}</div>
         <div class="cmh-meta">${invs.length} 張 · <b>$${fmtMoney(total)}</b></div>
       </div>
       <div class="cmh-pills">
@@ -9518,9 +9518,9 @@ function renderOutsourceByMonth(cases){
       return `<button class="nav-btn" style="font-size:.8rem;padding:2px 10px;${ok?'':'opacity:.3;cursor:default'}" ${ok?`onclick="osNavMonth(${d})"`:''} title="${d<0?'上個月份':'下個月份'}">${sym}</button>`;
     };
     return `<section class="cash-month">
-      <div class="cash-month-header">
+      <div class="cash-month-header" style="background:#fdf3f3;border-color:#e8aaaa">
         <div class="cmh-top">
-          <div class="cmh-title" style="display:flex;align-items:center;gap:8px">${navBtn(-1,'‹')}📅 ${escHtml(mPretty)}${navBtn(1,'›')}<span style="font-size:.6rem;font-weight:400;color:#999">${idx+1}/${_osKeys.length}</span></div>
+          <div class="cmh-title" style="display:flex;align-items:center;gap:8px;color:#c53030">${navBtn(-1,'‹')}📅 ${escHtml(mPretty)}${navBtn(1,'›')}<span style="font-size:.6rem;font-weight:400;color:#999">${idx+1}/${_osKeys.length}</span></div>
           <div class="cmh-meta">${csArr.length} 案 · 應付 <b>$${fmtMoney(total)}</b></div>
         </div>
         <div class="cmh-pills">
@@ -9861,9 +9861,9 @@ function renderCashTimeline(){
       return `<button class="nav-btn" style="font-size:.8rem;padding:2px 10px;${ok?'':'opacity:.3;cursor:default'}" ${ok?`onclick="ctNavMonth(${d})"`:''} title="${d<0?'上個月份':'下個月份'}">${sym}</button>`;
     };
     return `<section class="cash-month">
-      <div class="cash-month-header">
+      <div class="cash-month-header" style="background:#f4f8fc;border-color:#a8c8e8">
         <div class="cmh-top">
-          <div class="cmh-title" style="display:flex;align-items:center;gap:8px">${navBtn(-1,'‹')}📅 ${escHtml(pretty)}${navBtn(1,'›')}<span style="font-size:.6rem;font-weight:400;color:#999">${idx+1}/${_ctKeys.length}</span></div>
+          <div class="cmh-title" style="display:flex;align-items:center;gap:8px;color:#1e4a80">${navBtn(-1,'‹')}📅 ${escHtml(pretty)}${navBtn(1,'›')}<span style="font-size:.6rem;font-weight:400;color:#999">${idx+1}/${_ctKeys.length}</span></div>
           <div class="cmh-meta" style="display:flex;align-items:center;gap:8px">${nItems} 筆 · 預估淨流入 <b style="color:${m.net>=0?'#1e6038':'#c53030'}">${m.net<0?'-':'+'}$${fmtMoney(Math.abs(m.net))}</b><button class="nav-btn" style="font-size:.62rem;padding:2px 10px" onclick="ctToggleRows()">${_ctExpand?'收起明細 ▴':'展開明細 ▾'}</button></div>
         </div>
         <div class="cmh-pills">
