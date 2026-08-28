@@ -9139,6 +9139,13 @@ function renderCashflow(){
   // grouped-by-month otherwise (matches user's mental model of monthly income)
   const uniqueMonths=new Set(invs.map(i=>i.billingMonth||''));
   const useMonthGrouping=(monthSel==='all')&&(statusSel==='all')&&uniqueMonths.size>1;
+  // 區塊標題：與「應付款明細」同層級同樣式
+  const recvHeader=`<div style="margin-top:24px;padding:14px 0 10px;border-top:2px solid #e3e0d6">
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <h3 style="margin:0;font-size:.95rem;color:#1a1a1a">📥 應收款明細</h3>
+      <span style="font-size:.7rem;color:#888">合計 <b style="color:#1a1a1a">$${fmtMoney(agg.sent.amt+agg.paid.amt)}</b> · 待收 <b style="color:var(--amber)">$${fmtMoney(agg.sent.amt)}</b> · 已收 <b style="color:#1e6038">$${fmtMoney(agg.paid.amt)}</b></span>
+    </div>
+  </div>`;
   if(useMonthGrouping){
     // Bucket by billingMonth, preserving sort order
     const buckets=new Map();
@@ -9173,11 +9180,11 @@ function renderCashflow(){
       ${un?`<span style="background:var(--amber-soft);border:1px solid var(--amber-line);color:var(--amber);border-radius:8px;padding:0 6px;font-size:.6rem;font-weight:700">${un} 未收</span>`:''}
       ${unOther?`<span style="font-size:.62rem;color:var(--amber)">其他月份另有 ${unOther} 張未收</span>`:''}
     </div>`;
-    list.innerHTML=pager+renderCashMonthSection(_clSel,buckets.get(_clSel));
+    list.innerHTML=recvHeader+pager+renderCashMonthSection(_clSel,buckets.get(_clSel));
   }else{
     // 指定公司制月份時：薪資區塊置頂
     const salBlock=(monthSel!=='all'&&monthSel>=SALARY_ERA)?renderSalaryBlock(monthSel):'';
-    list.innerHTML=salBlock+invs.map(renderCashInvoiceRow).join('');
+    list.innerHTML=recvHeader+salBlock+invs.map(renderCashInvoiceRow).join('');
   }
 }
 // Extracted: render one invoice's expandable row + detail block.
@@ -9430,7 +9437,7 @@ function renderOutsourcePayables(){
   // Header controls
   el.innerHTML=`<div style="margin-top:24px;padding:14px 14px 0;border-top:2px solid #e3e0d6">
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px;flex-wrap:wrap">
-      <h3 style="margin:0;font-size:.95rem;color:#1a1a1a">📤 應付外包款</h3>
+      <h3 style="margin:0;font-size:.95rem;color:#1a1a1a">📤 應付款明細</h3>
       <span style="font-size:.7rem;color:#888">合計 <b style="color:#1a1a1a">$${fmtMoney(totalAll)}</b> · 待付 <b style="color:#c53030">$${fmtMoney(pendAll)}</b> · 已付 <b style="color:#1e6038">$${fmtMoney(paidAll)}</b></span>
       <span style="flex:1"></span>
       <div class="cash-status-toggle">
