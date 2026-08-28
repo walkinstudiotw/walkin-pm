@@ -8009,8 +8009,15 @@ function buildInvoicePdfHtml(inv,client){
 // ── CASHFLOW MODULE ────────────────────────────────
 // ═══════════════════════════════════════════════════
 // Cashflow filter state
-S.cashFilter={status:'all',expandedIds:new Set(),outMode:'month',outPerson:'all',viewMonth:'recent'};
-function setCashViewMonth(m){S.cashFilter.viewMonth=m;renderCashflow();}
+S.cashFilter={status:'all',expandedIds:new Set(),outMode:'month',outPerson:'all'};
+// 月收付明細：單月翻頁（與時間軸／外包款月卡一致）
+let _clSel=null,_clKeys=[];
+function clNavMonth(d){
+  const i=_clKeys.indexOf(_clSel)+d;
+  if(i<0||i>=_clKeys.length)return;
+  _clSel=_clKeys[i];
+  renderCashflow();
+}
 
 function setCashStatusFilter(s){
   S.cashFilter.status=s;
@@ -9140,25 +9147,33 @@ function renderCashflow(){
       if(!buckets.has(m))buckets.set(m,[]);
       buckets.get(m).push(inv);
     });
-    // 月份分頁：預設「近期」＝上月/本月/下月；其他月份點 tab 切換，tab 標註未收張數
-    const _now=new Date();
-    const _ym=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-    const recentSet=[_ym(new Date(_now.getFullYear(),_now.getMonth()-1,1)),_ym(_now),_ym(new Date(_now.getFullYear(),_now.getMonth()+1,1))];
-    let view=S.cashFilter.viewMonth||'recent';
-    if(view!=='recent'&&!buckets.has(view))view='recent';
-    const keys=[...buckets.keys()];
+    // 單月翻頁：‹ › 切換月份（升冪、未指定排最後）；預設當月，無則最近月份
+    const keys=[...buckets.keys()].sort((a,b)=>{
+      if(a==='(未指定)')return 1;
+      if(b==='(未指定)')return -1;
+      return a.localeCompare(b);
+    });
+    _clKeys=keys;
+    if(!_clSel||!keys.includes(_clSel)){
+      const _now=new Date();
+      const curYM=`${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}`;
+      _clSel=keys.includes(curYM)?curYM:(keys.find(k=>k!=='(未指定)'&&k>=curYM)||keys[keys.length-1]||null);
+    }
+    const idx=keys.indexOf(_clSel);
     const unpaidN=m=>(buckets.get(m)||[]).filter(i=>i.status==='sent').length;
-    const recentKeys=keys.filter(k=>recentSet.includes(k));
-    const recentUnpaid=recentKeys.reduce((s,k)=>s+unpaidN(k),0);
-    const mpill=(v,label,unpaid,on)=>`<button class="filter-pill${on?' active':''}" style="white-space:nowrap;flex-shrink:0" onclick="setCashViewMonth('${v}')">${label}${unpaid?`<span style="margin-left:5px;background:var(--amber-soft);border:1px solid var(--amber-line);color:var(--amber);border-radius:8px;padding:0 5px;font-size:.58rem;font-weight:700" title="此月有 ${unpaid} 張未收款 invoice">${unpaid} 未收</span>`:''}</button>`;
-    const tabs=`<div style="display:flex;gap:6px;overflow-x:auto;padding:2px 2px 10px;-webkit-overflow-scrolling:touch">
-      ${mpill('recent','近期（上/本/下月）',recentUnpaid,view==='recent')}
-      ${keys.filter(k=>!recentSet.includes(k)).map(k=>mpill(k,k==='(未指定)'?k:k.replace('-','/'),unpaidN(k),view===k)).join('')}
+    const un=unpaidN(_clSel);
+    const unOther=keys.filter(k=>k!==_clSel).reduce((s,k)=>s+unpaidN(k),0);
+    const navBtn=(d,sym)=>{
+      const ok=idx+d>=0&&idx+d<keys.length;
+      return `<button class="nav-btn" style="font-size:.8rem;padding:2px 10px;${ok?'':'opacity:.3;cursor:default'}" ${ok?`onclick="clNavMonth(${d})"`:''} title="${d<0?'上個月份':'下個月份'}">${sym}</button>`;
+    };
+    const pager=`<div style="display:flex;align-items:center;gap:8px;padding:2px 2px 10px;flex-wrap:wrap">
+      ${navBtn(-1,'‹')}<span style="font-family:'JetBrains Mono',monospace;font-weight:800;color:#5a3d10">📅 ${escHtml(_clSel==='(未指定)'?_clSel:_clSel.replace('-',' / '))}</span>${navBtn(1,'›')}
+      <span style="font-size:.6rem;color:#999">${idx+1}/${keys.length}</span>
+      ${un?`<span style="background:var(--amber-soft);border:1px solid var(--amber-line);color:var(--amber);border-radius:8px;padding:0 6px;font-size:.6rem;font-weight:700">${un} 未收</span>`:''}
+      ${unOther?`<span style="font-size:.62rem;color:var(--amber)">其他月份另有 ${unOther} 張未收</span>`:''}
     </div>`;
-    const shownKeys=view==='recent'?recentKeys:[view];
-    const sections=shownKeys.map(m=>renderCashMonthSection(m,buckets.get(m))).join('')
-      ||`<div style="text-align:center;color:#999;font-size:.74rem;padding:24px 0">上月／本月／下月沒有 invoice — 點上方月份分頁查看其他月份</div>`;
-    list.innerHTML=tabs+sections;
+    list.innerHTML=pager+renderCashMonthSection(_clSel,buckets.get(_clSel));
   }else{
     // 指定公司制月份時：薪資區塊置頂
     const salBlock=(monthSel!=='all'&&monthSel>=SALARY_ERA)?renderSalaryBlock(monthSel):'';
