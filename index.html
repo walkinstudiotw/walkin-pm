@@ -1006,8 +1006,6 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
     <div class="cash-summary" id="cash-summary"></div>
     <!-- 金流時間軸（原「入帳時程」＋「預估」分頁合併：預估流入/流出按月） -->
     <div id="cash-timeline"></div>
-    <!-- 專案總覽（isProject 案件：分期請款＋專案支出＋跨月淨額） -->
-    <div id="cash-projects"></div>
     <!-- Invoice list with expand-to-view-split -->
     <div id="cash-list" class="cash-list"></div>
     <div id="cash-empty" class="empty-state" style="display:none">
@@ -1017,6 +1015,8 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
     </div>
     <!-- 外包應付款 -->
     <div id="cash-outsource-section"></div>
+    <!-- 專案總覽（isProject 案件：分期請款＋專案支出＋跨月淨額）— 置於頁尾 -->
+    <div id="cash-projects"></div>
   </div>
 </div>
 
@@ -8760,7 +8760,14 @@ function renderProjectCards(){
     return (c.status||'todo')!=='done'||remain>0||wait>0;   // 完結且收清的專案不再顯示
   });
   if(!projs.length){el.innerHTML='';return;}
-  el.innerHTML='<div style="padding:0 14px 6px">'+projs.map(c=>{
+  // 區塊標題（與應收/應付款明細同層級樣式）
+  const projHeader=`<div style="margin-top:24px;padding:14px 0 10px;border-top:2px solid #e3e0d6">
+    <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
+      <h3 style="margin:0;font-size:.95rem;color:#1a1a1a">📦 專案總覽</h3>
+      <span style="font-size:.7rem;color:#888">${projs.length} 個進行中專案 — 分期請款、專案支出與跨月淨額</span>
+    </div>
+  </div>`;
+  el.innerHTML='<div style="padding:0 14px 14px">'+projHeader+projs.map(c=>{
     const client=S.clients[c.clientId];
     const contract=c.pricing?.amount||0;
     const parts=projectBilledParts(c.id);
