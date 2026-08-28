@@ -199,6 +199,11 @@ body{display:flex;flex-direction:column}
 .cash-month-pill.studio{background:#faf6ee;border-color:#c8b088}
 .cash-month-pill.studio .v{color:#a08560}
 .cash-month-unpaid{font-size:.68rem;color:#a86a00;font-weight:600}
+/* 金流頁分區底色：每段落不同色帶區隔（極低飽和，配 1px 邊線） */
+#cash-timeline{background:#f1f5f0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:16px;padding-bottom:16px}
+#cash-list{background:#faf6ea;border-bottom:1px solid var(--line);margin-top:0;padding-top:2px;padding-bottom:20px}
+#cash-outsource-section{background:#f8f1ee;border-bottom:1px solid var(--line)}
+#cash-projects{background:#f0f2f5;border-bottom:1px solid var(--line)}
 /* 金流時間軸 */
 .fc-rows{background:#ffffff;border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--shadow-card)}
 .fc-line{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid #f1eee6;cursor:pointer;font-size:.74rem;transition:background .12s}
@@ -8761,7 +8766,7 @@ function renderProjectCards(){
   });
   if(!projs.length){el.innerHTML='';return;}
   // 區塊標題（與應收/應付款明細同層級樣式）
-  const projHeader=`<div style="margin-top:24px;padding:14px 0 10px;border-top:2px solid #e3e0d6">
+  const projHeader=`<div style="padding:12px 0 10px">
     <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
       <h3 style="margin:0;font-size:.95rem;color:#1a1a1a">📦 專案總覽</h3>
       <span style="font-size:.7rem;color:#888">${projs.length} 個進行中專案 — 分期請款、專案支出與跨月淨額</span>
@@ -9151,7 +9156,7 @@ function renderCashflow(){
   const uniqueMonths=new Set(invs.map(i=>i.billingMonth||''));
   const useMonthGrouping=(monthSel==='all')&&(statusSel==='all')&&uniqueMonths.size>1;
   // 區塊標題：與「應付款明細」同層級同樣式
-  const recvHeader=`<div style="margin-top:24px;padding:14px 0 10px;border-top:2px solid #e3e0d6">
+  const recvHeader=`<div style="padding:12px 0 10px">
     <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
       <h3 style="margin:0;font-size:.95rem;color:#1a1a1a">📥 應收款明細</h3>
       <span style="font-size:.7rem;color:#888">合計 <b style="color:#1a1a1a">$${fmtMoney(agg.sent.amt+agg.paid.amt)}</b> · 待收 <b style="color:var(--amber)">$${fmtMoney(agg.sent.amt)}</b> · 已收 <b style="color:#1e6038">$${fmtMoney(agg.paid.amt)}</b></span>
@@ -9446,7 +9451,7 @@ function renderOutsourcePayables(){
     bodyHtml=renderOutsourceByPerson(cases);
   }
   // Header controls
-  el.innerHTML=`<div style="margin-top:24px;padding:14px 14px 0;border-top:2px solid #e3e0d6">
+  el.innerHTML=`<div style="padding:12px 14px 0">
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px;flex-wrap:wrap">
       <h3 style="margin:0;font-size:.95rem;color:#1a1a1a">📤 應付款明細</h3>
       <span style="font-size:.7rem;color:#888">合計 <b style="color:#1a1a1a">$${fmtMoney(totalAll)}</b> · 待付 <b style="color:#c53030">$${fmtMoney(pendAll)}</b> · 已付 <b style="color:#1e6038">$${fmtMoney(paidAll)}</b></span>
@@ -9869,7 +9874,7 @@ function renderCashTimeline(){
     </section>`;
   }).join('');
   el.innerHTML=`
-    <div style="margin:20px 14px 0;padding:14px 0 0;border-top:2px solid #e3e0d6">
+    <div style="margin:0 14px;padding:12px 0 0">
       <h3 style="margin:0;font-size:.95rem;color:#1a1a1a">📈 金流預估（時間軸）</h3>
       <div style="font-size:.68rem;color:#888;margin-top:2px">未來 ${CT_MONTHS} 個月的預估流入／流出（已請款待收＋未請款預估＋支出）— 預估口徑，不受上方篩選影響</div>
     </div>
