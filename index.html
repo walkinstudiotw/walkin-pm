@@ -799,6 +799,7 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
       <button id="mobile-menu-btn" onclick="toggleMobileSidebar()" title="選單">☰</button>
       <div class="main-title" id="main-title"><span class="ico">📋</span><span id="main-title-text">案件</span></div>
       <div class="main-actions">
+        <button class="nav-btn" id="undo-btn" onclick="undoLastAction()" title="目前沒有可復原的操作" style="opacity:.35">↩ 上一步</button>
         <button class="nav-btn primary" id="add-btn" onclick="openAddCase()">＋ 新增案件</button>
       </div>
     </div>
@@ -2329,7 +2330,92 @@ function initFirebase(){
       refreshLogoPreview();refreshStampPreviews();
     }
   });
+  // 上一步（undo）shadow 鏡像：同 path 的 listener 由 SDK 共用，不多耗頻寬
+  _UNDO_NODES.forEach(n=>{
+    _db.ref(`${ROOT}/${n}`).on('value',snap=>{_undoShadow[n]=snap.val();});
+  });
 }
+// ═══════════════════════════════════════════════════
+// ── 上一步（undo）───────────────────────────────────
+// 攔截所有 `${ROOT}/` 下的 DB 寫入（set/remove/update），寫入前
+// 從「只由伺服器 echo 更新的 shadow 鏡像」取原值（本機常就地改
+// 物件再存，S 的值不可靠）；同一 tick 的多筆寫入合併成一步。
+// 復原＝把原值寫回 DB（多裝置也會同步）；只限本次瀏覽階段。
+// ═══════════════════════════════════════════════════
+const UNDO_MAX=50;
+const _UNDO_NODES=['clients','cases','workItems','invoices','outsourcers','salaryPayments','settings'];
+const _undoShadow={};
+let _undoStack=[],_undoPending=null,_undoActive=false;
+function _undoShadowAt(path){
+  const prefix=`${ROOT}/`;
+  if(!path.startsWith(prefix))return undefined;
+  const segs=path.slice(prefix.length).split('/').filter(Boolean);
+  if(!_UNDO_NODES.includes(segs[0]))return undefined;
+  let cur=segs.length===1?_undoShadow[segs[0]]:(_undoShadow[segs[0]]??null);
+  for(let i=1;i<segs.length;i++){if(cur==null)return null;cur=cur[segs[i]];}
+  return cur===undefined?null:cur;
+}
+function _recordUndo(path){
+  if(_undoActive)return;
+  const prev=_undoShadowAt(path);
+  if(prev===undefined)return;   // 非資料節點不記
+  if(!_undoPending){
+    _undoPending=[];
+    setTimeout(()=>{
+      if(_undoPending&&_undoPending.length){
+        _undoStack.push(_undoPending);
+        if(_undoStack.length>UNDO_MAX)_undoStack.shift();
+        _updateUndoBtn();
+      }
+      _undoPending=null;
+    },0);
+  }
+  _undoPending.push({path,prev:prev===null?null:JSON.parse(JSON.stringify(prev))});
+}
+function undoLastAction(){
+  if(!_undoStack.length){toast('沒有可復原的操作',true);return;}
+  if(!_fbReady){toast('尚未連線，無法復原',true);return;}
+  const step=_undoStack.pop();
+  _undoActive=true;
+  try{
+    Promise.all(step.map(w=>w.prev===null?_db.ref(w.path).remove():_db.ref(w.path).set(w.prev)))
+      .then(()=>toast('↩ 已復原上一步'))
+      .catch(e=>{console.error('undo failed',e);toast('復原失敗',true);});
+  }finally{
+    _undoActive=false;   // set() 呼叫是同步發出的，攔截判斷已完成
+  }
+  _updateUndoBtn();
+}
+function _updateUndoBtn(){
+  const b=document.getElementById('undo-btn');
+  if(!b)return;
+  b.style.opacity=_undoStack.length?'1':'.35';
+  b.title=_undoStack.length?`復原上一步（尚可復原 ${_undoStack.length} 步，⌘Z）`:'目前沒有可復原的操作';
+}
+// 攔截 _db.ref：只包 `${ROOT}/` 下的寫入方法，讀取/訂閱不受影響
+(function(){
+  const orig=_db.ref.bind(_db);
+  _db.ref=function(p){
+    const r=orig(p);
+    if(typeof p==='string'&&p.startsWith(`${ROOT}/`)){
+      const oSet=r.set.bind(r),oRem=r.remove.bind(r),oUpd=r.update.bind(r);
+      r.set=v=>{_recordUndo(p);return oSet(v);};
+      r.remove=()=>{_recordUndo(p);return oRem();};
+      r.update=v=>{if(v&&typeof v==='object')Object.keys(v).forEach(k=>_recordUndo(`${p}/${k}`));return oUpd(v);};
+    }
+    return r;
+  };
+})();
+// ⌘Z / Ctrl+Z：輸入框中不攔截（保留原生文字復原）
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&!e.shiftKey&&!e.altKey&&e.key.toLowerCase()==='z'){
+    const ae=document.activeElement;
+    if(ae&&(/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)||ae.isContentEditable))return;
+    e.preventDefault();
+    undoLastAction();
+  }
+});
+
 let _seededClients=false;
 let _orphanScanTimer=null;
 function seedDefaultClients(){
