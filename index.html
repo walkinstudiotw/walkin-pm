@@ -938,7 +938,6 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
           <button class="nav-btn" onclick="togglePreview()" title="收合預覽">⇥</button>
           <select id="qpdf-format" class="nav-btn" title="PDF 紙張格式" style="padding:4px 6px">
             <option value="a4">A4（自動分頁）</option>
-            <option value="tabloid">Tabloid 11×17</option>
             <option value="fit">單頁（依內容長度）</option>
           </select>
           <button class="nav-btn export-btn" onclick="downloadQuotationPdf()" style="background:#fff4e6;border-color:#6a3e00;color:#a86a00">⬇ 下載 PDF</button>
@@ -10381,11 +10380,10 @@ async function downloadQuotationPdf(){
   stage.style.zIndex='-1';
   stage.style.pointerEvents='none';
   const filename=`Quotation_${client.name}_${new Date().toISOString().slice(0,10)}.pdf`;
-  // 紙張選項：a4（自動分頁）/ tabloid（11×17）/ fit（單頁，高度依內容）
+  // 紙張選項：a4（自動分頁）/ fit（單頁，高度依內容）
   const fmtSel=document.getElementById('qpdf-format')?.value||'a4';
   let jsFormat='a4';
-  if(fmtSel==='tabloid')jsFormat='tabloid';
-  else if(fmtSel==='fit'){
+  if(fmtSel==='fit'){
     // 794px 版面寬 = 210mm；內容高換算成 mm 再加上下 margin，整份不分頁
     const hMm=Math.max(297,Math.ceil(root.scrollHeight*210/794)+22);
     jsFormat=[210,hMm];
