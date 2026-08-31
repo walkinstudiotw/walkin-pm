@@ -1703,6 +1703,33 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
   </div>
 </div>
 
+<!-- 部分入帳：記收款 MODAL -->
+<div class="modal-overlay" id="pp-modal">
+  <div class="modal" style="width:380px">
+    <div class="modal-title">💰 記收款</div>
+    <div id="pp-info" style="font-size:.8rem;color:#666;line-height:1.6;margin-bottom:6px"></div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">收款日期</label>
+        <input class="form-input" type="date" id="pp-date" style="font-family:'JetBrains Mono',monospace">
+      </div>
+      <div class="form-group">
+        <label class="form-label">金額（預設帶入餘額）</label>
+        <input class="form-input" type="number" id="pp-amt" inputmode="numeric" style="font-family:'JetBrains Mono',monospace">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">備註（選填）</label>
+      <input class="form-input" id="pp-note" placeholder="例：訂金、第二筆">
+    </div>
+    <div id="pp-err" style="font-size:.66rem;color:#c53030;min-height:15px"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeM('pp-modal')">取消</button>
+      <button class="btn-primary" onclick="confirmPpPayment()">記錄收款</button>
+    </div>
+  </div>
+</div>
+
 <!-- 專案開請款 MODAL -->
 <div class="modal-overlay" id="proj-bill-modal">
   <div class="modal" style="width:400px">
@@ -1954,6 +1981,14 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
         </div>
       </div>
       <div style="font-size:.62rem;color:#666;margin-top:3px">金流頁 2026/08 起的月份會自動帶出薪資支出，可逐月標記已發/未發並計入月損益</div>
+    </div>
+
+    <div class="form-group full" style="background:var(--amber-soft);border:1px solid var(--amber-line);border-radius:10px;padding:10px 12px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.78rem;font-weight:700;color:#a86a00">
+        <input type="checkbox" id="set-partial-pay" onchange="togglePartialPayments(this.checked)" style="accent-color:#a86a00">
+        💰 啟用部分入帳
+      </label>
+      <div style="font-size:.62rem;color:#666;margin-top:3px">開啟後 invoice 可分次記錄收款（金流頁應收列展開可「＋ 記收款」）；待收金額改用餘額計算。關閉後既有收款紀錄保留、介面回到「應收／已入帳」兩態</div>
     </div>
 
     <div class="form-group full">
@@ -5810,6 +5845,7 @@ function loadSettings(){
   }catch(e){}
 }
 function openSettings(){
+  document.getElementById('set-partial-pay').checked=!!S.globalSettings?.partialPayments;
   document.getElementById('set-api-key').value=S.settings.apiKey||'';
   document.getElementById('set-ai-model').value=S.settings.aiModel||'claude-haiku-4-5-20251001';
   buildFlatPicker('set-ai-model','set-ai-model-trigger',
@@ -8846,6 +8882,58 @@ function confirmInvPay(){
   renderCashflow();
   toast(`已入帳 — ${inv.paidDate}`);
 }
+// ── 部分入帳（設定頁開關 settings/partialPayments；inv.payments=[{id,date,amount,note}]）──
+// 關閉時 invPartialPaid 一律回 0 → 所有口徑自動回到「應收/已入帳」兩態
+function ppEnabled(){return !!S.globalSettings?.partialPayments;}
+function invPartialPaid(inv){return ppEnabled()?(inv.payments||[]).reduce((s,p)=>s+(parseInt(p.amount)||0),0):0;}
+function invBalance(inv){return Math.max(0,(inv.total||0)-invPartialPaid(inv));}
+function togglePartialPayments(on){
+  if(!_fbReady)return;
+  S.globalSettings=S.globalSettings||{};S.globalSettings.partialPayments=!!on;
+  _db.ref(`${ROOT}/settings/partialPayments`).set(!!on);
+  toast(on?'已啟用部分入帳':'已關閉部分入帳（收款紀錄保留）');
+}
+let _ppTarget=null;
+function openPpModal(id){
+  const inv=S.invoices[id];if(!inv)return;
+  _ppTarget=id;
+  const bal=invBalance(inv);
+  document.getElementById('pp-info').innerHTML=`<b>${escHtml(inv.invoiceNumber||'')}</b>・${escHtml(S.clients[inv.clientId]?.name||'')}　餘額 <span style="color:#a86a00;font-family:'JetBrains Mono',monospace;font-weight:700">$${fmtMoney(bal)}</span>`;
+  const d=new Date();
+  document.getElementById('pp-date').value=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  document.getElementById('pp-amt').value=bal||'';
+  document.getElementById('pp-note').value='';
+  document.getElementById('pp-err').textContent='';
+  openM('pp-modal');
+}
+function confirmPpPayment(){
+  const inv=S.invoices[_ppTarget];if(!inv){closeM('pp-modal');return;}
+  const date=document.getElementById('pp-date').value;
+  const amt=parseInt(document.getElementById('pp-amt').value)||0;
+  if(!date||amt<=0){document.getElementById('pp-err').textContent='請填寫收款日期與金額';return;}
+  inv.payments=inv.payments||[];
+  inv.payments.push({id:uid(),date,amount:amt,note:document.getElementById('pp-note').value.trim()});
+  // 餘額歸零 → 自動轉已入帳（入帳日＝此筆收款日，之後仍可改）
+  const bal=(inv.total||0)-inv.payments.reduce((s,p)=>s+(parseInt(p.amount)||0),0);
+  if(bal<=0&&inv.status==='sent'){
+    inv.status='paid';inv.paidAt=Date.now();inv.paidDate=date.replace(/-/g,'/');
+  }
+  inv.updatedAt=Date.now();
+  saveInvoiceObj(inv);
+  closeM('pp-modal');
+  renderCashflow();
+  toast(bal<=0?`已收齊 — 自動轉已入帳（${date}）`:`已記收款 $${fmtMoney(amt)}，餘額 $${fmtMoney(Math.max(0,bal))}`);
+}
+function delPpPayment(invId,pid){
+  const inv=S.invoices[invId];if(!inv)return;
+  const p=(inv.payments||[]).find(x=>x.id===pid);
+  showConf('刪除收款紀錄？',`「${p?.date||''}　$${fmtMoney(p?.amount||0)}」將自收款紀錄移除（invoice 狀態不會自動變更）。`,()=>{
+    inv.payments=(inv.payments||[]).filter(x=>x.id!==pid);
+    inv.updatedAt=Date.now();
+    saveInvoiceObj(inv);
+    renderCashflow();
+  });
+}
 // （原「入帳時程」renderArSchedule 已併入金流時間軸 renderCashTimeline — 見檔尾時間軸模組）
 // ── 專案總覽（金流頁）─────────────────────────────
 // 每月專案支出合計（按支出日期月份 → 計入該月損益）
@@ -9052,7 +9140,7 @@ function renderCompanyMonthSection(month,invs,nav){
     const c=computeInvoiceCompany(inv);
     sub+=c.totals.sub;tax+=c.totals.tax;cost+=c.totals.cost;net+=c.totals.net;exp+=c.totals.expenses;
     if(inv.status==='paid'){recvAmt+=inv.total||0;recvN++;}
-    else{sentAmt+=inv.total||0;sentN++;}
+    else{sentAmt+=invBalance(inv);recvAmt+=invPartialPaid(inv);sentN++;}
   });
   const salaryOn=month>=SALARY_ERA;
   const sal=salaryOn?monthSalary(month):[];
@@ -9121,11 +9209,16 @@ function renderCashInvoiceRowCompany(inv){
   const dueHint=inv.status==='sent'
     ?`<span style="font-size:.6rem;color:${dn!==null&&dn<0?'#c53030':'#888'};margin-left:6px">${dn!==null&&dn<0?`逾期 ${-dn} 天`:`預計入帳 ${escHtml((inv.dueDate||'—').slice(5))}`}</span>`
     :(inv.paidDate?`<span style="font-size:.6rem;color:#1e6038;margin-left:6px">✅ ${escHtml(inv.paidDate.slice(5))} 入帳</span>`:'');
+  // 部分入帳徽章（僅待收且已有收款紀錄時）
+  const ppPaid=invPartialPaid(inv);
+  const ppBadge=(inv.status==='sent'&&ppPaid>0)
+    ?`<div style="margin-top:3px"><span style="display:inline-block;background:var(--amber-soft);border:1px solid var(--amber-line);color:#a86a00;border-radius:8px;padding:0 6px;font-size:.58rem;font-weight:700;font-family:'JetBrains Mono',monospace">已收 $${fmtMoney(ppPaid)}／餘 $${fmtMoney(invBalance(inv))}</span></div>`
+    :'';
   return `<div class="cash-row${isExpanded?' expanded':''}" data-id="${inv.id}">
     <div class="cash-row-head" onclick="toggleCashRow('${inv.id}')">
       <div class="ino">${escHtml(inv.invoiceNumber||'')}</div>
       <div class="cli">${escHtml(cName)}<div style="font-size:.62rem;color:#888;font-family:'JetBrains Mono',monospace;margin-top:2px">${inv.billingMonth||''}</div></div>
-      <div class="mon">${(inv.items||[]).length} 項${dueHint}</div>
+      <div class="mon">${(inv.items||[]).length} 項${dueHint}${ppBadge}</div>
       <div onclick="event.stopPropagation()">
         <div class="cash-status-toggle">
           <button class="${inv.status==='sent'?'active sent':''}" onclick="setInvoicePaymentStatus('${inv.id}','sent')">應收</button>
@@ -9140,6 +9233,18 @@ function renderCashInvoiceRowCompany(inv){
         <div>項目</div><div style="text-align:right">金額</div><div style="text-align:right">外包</div><div style="text-align:right">稅</div><div style="text-align:right">公司淨額</div><div></div>
       </div>
       ${linesHtml}
+      ${ppEnabled()&&(inv.status==='sent'||(inv.payments||[]).length)?`<div style="margin:8px 0;padding:8px 10px;background:#fff;border:1px solid var(--amber-line);border-radius:7px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${(inv.payments||[]).length?'6px':'0'}">
+          <span style="font-size:.64rem;font-weight:700;color:#a86a00;letter-spacing:.4px">💰 收款紀錄${inv.status==='sent'?`（餘額 $${fmtMoney(invBalance(inv))}）`:''}</span>
+          ${inv.status==='sent'?`<button class="nav-btn" onclick="openPpModal('${inv.id}')" style="font-size:.64rem;padding:2px 8px;background:var(--amber-soft);border-color:var(--amber-line);color:#a86a00">＋ 記收款</button>`:''}
+        </div>
+        ${(inv.payments||[]).map(p=>`<div style="display:grid;grid-template-columns:100px 1fr 110px 26px;gap:6px;align-items:center;margin-bottom:3px;font-size:.7rem">
+          <span style="font-family:'JetBrains Mono',monospace;color:#666">${escHtml(p.date||'')}</span>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#1a1a1a">${escHtml(p.note||'—')}</span>
+          <span style="font-family:'JetBrains Mono',monospace;color:#1e6038;font-weight:700;text-align:right">$${fmtMoney(p.amount||0)}</span>
+          <button class="act-btn del" onclick="delPpPayment('${inv.id}','${p.id}')" title="刪除此筆收款" style="padding:2px 4px">✕</button>
+        </div>`).join('')}
+      </div>`:''}
       <div style="margin:8px 0;padding:8px 10px;background:#faf6ee;border:1px dashed #d8c8aa;border-radius:7px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${(inv.expenses||[]).length?'6px':'0'}">
           <span style="font-size:.64rem;font-weight:700;color:#a08560;letter-spacing:.4px">📦 專案支出（自公司淨額扣除）</span>
@@ -9203,7 +9308,7 @@ function renderCashflow(){
   // Aggregate summary — 分潤三卡只計歷史（分潤制）月份；公司制月份另計公司淨額
   const agg={sent:{count:0,amt:0},paid:{count:0,amt:0},qi:0,wu:0,studio:0,cost:0,coNet:0,coN:0};
   invs.forEach(inv=>{
-    if(inv.status==='sent'){agg.sent.count++;agg.sent.amt+=inv.total||0;}
+    if(inv.status==='sent'){agg.sent.count++;agg.sent.amt+=invBalance(inv);agg.paid.amt+=invPartialPaid(inv);}
     else if(inv.status==='paid'){agg.paid.count++;agg.paid.amt+=inv.total||0;}
     if(isCompanyMonth(inv.billingMonth)){
       agg.coNet+=computeInvoiceCompany(inv).totals.net;agg.coN++;
@@ -9752,11 +9857,12 @@ function computeCashTimeline(){
     if(buckets.has(ym))return ym;
     return ym<monthKeys[0]?monthKeys[0]:KEY_LATER;
   };
-  // A: sent invoices → 付款期限月份（帶 due 供逾期 badge／✓入帳鈕）
+  // A: sent invoices → 付款期限月份（帶 due 供逾期 badge／✓入帳鈕）；部分入帳時金額用餘額
   invoiceList().filter(i=>i.status==='sent').forEach(inv=>{
     const due=(inv.dueDate||'').replace(/\//g,'-');
     const c=S.clients[inv.clientId];
-    buckets.get(keyFor(due.slice(0,7))).inflows.push({tier:'A',invId:inv.id,due,label:`${inv.invoiceNumber||''}｜${c?.name||'?'}`,date:inv.dueDate||'',amt:inv.total||0,click:`jumpToInvoice('${inv.id}')`});
+    const pp=invPartialPaid(inv);
+    buckets.get(keyFor(due.slice(0,7))).inflows.push({tier:'A',invId:inv.id,due,label:`${inv.invoiceNumber||''}｜${c?.name||'?'}${pp>0?`（已收 $${fmtMoney(pp)}）`:''}`,date:inv.dueDate||'',amt:invBalance(inv),click:`jumpToInvoice('${inv.id}')`});
   });
   // B/C: 未請款的主案件（公司制：收入全額列入，不做分潤估算）
   Object.values(S.cases||{}).forEach(cs=>{
