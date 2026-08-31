@@ -5565,6 +5565,16 @@ function saveQuoteItem(){
     if(existing?.workItemId)item.workItemId=existing.workItemId;
     if(existing?.subItemId)item.subItemId=existing.subItemId;
   }
+  // 編輯時保留身分欄位 — 否則整列被重建後：Bundle 行丟 bundleSourceId
+  // （PDF 細項消失）、加減項行丟 isAddon/addonId（會被當一般行重複計價）
+  if(S.editQuoteItemId){
+    const prev=c.quotation.items.find(x=>x.itemId===S.editQuoteItemId);
+    if(prev){
+      if(prev.bundleSourceId)item.bundleSourceId=prev.bundleSourceId;
+      if(prev.isAddon){item.isAddon=true;if(prev.addonId)item.addonId=prev.addonId;}
+    }
+  }
+  if(!item.isAddon&&wid&&S.workItems[wid]?.isBundle)item.bundleSourceId=wid;
   // Valid in-modal custom definitions — ids assigned up front so quote lines
   // and library defs share them regardless of persistence timing
   const addonDefs=_qiCustomAddons.filter(a=>(a.label||'').trim())
