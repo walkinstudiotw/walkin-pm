@@ -5085,9 +5085,14 @@ function renderQuoteEditor(main,c){
             <input type="checkbox" ${c.quotation.showSignature?'checked':''} onchange="updateQuoteMeta('showSignature',this.checked)" style="accent-color:#1e6038">
             顯示客戶簽章區
           </label>
-          <label style="display:flex;align-items:center;gap:5px;cursor:pointer" title="取消勾選 → PDF 上 Bundle 只顯示一行總價，不列出內含項目與逐項單價">
-            <input type="checkbox" ${c.quotation.showBundleDetails!==false?'checked':''} onchange="updateQuoteMeta('showBundleDetails',this.checked)" style="accent-color:#1e6038">
-            顯示 Bundle 細項（內含項目與單價）
+          <label style="display:flex;align-items:center;gap:5px" title="PDF 上 Bundle 內含項目的顯示方式：項目＋金額／僅項目名稱／完全不列（只留一行總價）">
+            Bundle 細項
+            <select class="form-select" style="width:auto;font-size:.7rem;padding:2px 6px" onchange="updateQuoteMeta('bundleDetailMode',this.value)">
+              ${(()=>{const m=c.quotation.bundleDetailMode||(c.quotation.showBundleDetails===false?'off':'full');
+                return `<option value="full" ${m==='full'?'selected':''}>顯示項目＋金額</option>
+                <option value="names" ${m==='names'?'selected':''}>僅顯示項目</option>
+                <option value="off" ${m==='off'?'selected':''}>不顯示</option>`;})()}
+            </select>
           </label>
         </div>
       </div>
@@ -10084,8 +10089,10 @@ function buildPdfTemplateD(client){
           <td class="right">$${fmtMoney(sub)}</td>
         </tr>`;
         // If this is a bundle row, append child preview rows (info-only: 單價/數量/單位, no subtotal)
-        // q.showBundleDetails=false → Bundle 只留一行總價，不讓客戶逐項對照
-        if(it.bundleSourceId&&bw?.isBundle&&q.showBundleDetails!==false){
+        // bundleDetailMode：'full'=項目＋金額（預設）/'names'=僅項目名稱/'off'=不列（只留一行總價）
+        // 相容舊欄位 showBundleDetails=false → off
+        const bMode=q.bundleDetailMode||(q.showBundleDetails===false?'off':'full');
+        if(it.bundleSourceId&&bw?.isBundle&&bMode!=='off'){
           if(bw.bundleChildIds?.length){
             const subMap=bw.bundleChildSubItems||{};
             // For each child, resolve display label + effective price (sub-item if chosen, else default)
@@ -10102,21 +10109,24 @@ function buildPdfTemplateD(client){
                 unit,
               };
             }).filter(Boolean);
+            const showAmt=bMode==='full';
             html+=childResolved.map(ci=>`<tr class="bundle-info-child">
               <td>▸ ${escHtml(ci.label)}</td>
-              <td class="right">$${fmtMoney(ci.price)}</td>
-              <td class="right">1</td>
-              <td class="right">${escHtml(ci.unit||'—')}</td>
+              <td class="right">${showAmt?`$${fmtMoney(ci.price)}`:''}</td>
+              <td class="right">${showAmt?'1':''}</td>
+              <td class="right">${showAmt?escHtml(ci.unit||'—'):''}</td>
               <td></td>
             </tr>`).join('');
-            // Bundle 優惠 line at the bottom (sum of children - bundle's price)
-            const sumChildren=childResolved.reduce((s,ci)=>s+(ci.price||0),0);
-            const bundleSaving=sumChildren-(bw.defaultPrice||0);
-            if(bundleSaving>0){
-              html+=`<tr class="bundle-info-saving">
-                <td colspan="4" class="right">Bundle 優惠</td>
-                <td class="right">-$${fmtMoney(bundleSaving)}</td>
-              </tr>`;
+            // Bundle 優惠 line at the bottom (sum of children - bundle's price)；僅項目模式不列金額
+            if(showAmt){
+              const sumChildren=childResolved.reduce((s,ci)=>s+(ci.price||0),0);
+              const bundleSaving=sumChildren-(bw.defaultPrice||0);
+              if(bundleSaving>0){
+                html+=`<tr class="bundle-info-saving">
+                  <td colspan="4" class="right">Bundle 優惠</td>
+                  <td class="right">-$${fmtMoney(bundleSaving)}</td>
+                </tr>`;
+              }
             }
           }
         }
