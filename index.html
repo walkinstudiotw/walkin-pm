@@ -10080,7 +10080,8 @@ function buildPdfTemplateD(client){
         const sub=baseSub+addonContribution;
         // Bundle rows: prefer the live workitem's unit (user may have updated it after first save)
         const bw=it.bundleSourceId?S.workItems[it.bundleSourceId]:null;
-        const displayUnit=(bw?.unit||it.unit||'—');
+        // 報價行自己的單位優先（子項目/手動改的單位要生效）；沒填才 fallback 到庫的 Bundle 單位
+        const displayUnit=(it.unit||bw?.unit||'—');
         let html=`<tr>
           <td>${escHtml(it.label)}</td>
           <td class="right">$${fmtMoney(it.defaultPrice)}</td>
