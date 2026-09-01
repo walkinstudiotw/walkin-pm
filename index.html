@@ -1237,7 +1237,7 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
 
     <div class="form-row-3">
       <div class="form-group">
-        <label class="form-label">服務項目（從工作項目庫）</label>
+        <label class="form-label" style="display:flex;justify-content:space-between;align-items:center;gap:8px">服務項目（從工作項目庫）<button type="button" class="nav-btn" onclick="openQuoteImport()" title="把此客戶報價單上的工作項目與金額帶入案件" style="font-size:.6rem;padding:1px 7px;flex-shrink:0">📋 從報價單匯入</button></label>
         <input type="hidden" id="f-quote-item" value="">
         <div class="qi-master-picker">
           <button type="button" class="qi-master-trigger" id="fci-trigger" onclick="togglePicker('fci',refreshFciDropdown)">
@@ -1709,6 +1709,23 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeM('inv-pay-modal')">取消</button>
       <button class="btn-primary" onclick="confirmInvPay()">確認入帳</button>
+    </div>
+  </div>
+</div>
+
+<!-- 從報價單匯入案件項目 MODAL -->
+<div class="modal-overlay" id="qimp-modal">
+  <div class="modal" style="width:460px">
+    <div class="modal-title">📋 從報價單匯入</div>
+    <div style="font-size:.68rem;color:#888;margin-bottom:8px">勾選要帶入案件的報價項目：第一個主項成為「服務項目」（其加減項一併帶入），其餘進「其他服務項目」。</div>
+    <div id="qimp-list" style="max-height:300px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;background:#fff"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 2px 0;font-size:.74rem">
+      <span style="color:#888">勾選合計</span>
+      <span id="qimp-sum" style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#1e6038">$0</span>
+    </div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeM('qimp-modal')">取消</button>
+      <button class="btn-primary" onclick="confirmQuoteImport()">匯入</button>
     </div>
   </div>
 </div>
@@ -3769,7 +3786,7 @@ function updateFExtra(i,k,v){
   if(k==='workItemId'){
     x.workItemId=v;
     const w=v?S.workItems[v]:null;
-    x.label=w?w.label:'';
+    if(w)x.label=w.label;   // 切回「— 選擇 —」時保留原 label（自訂/匯入項）
     if(w&&!(x.amount>0))x.amount=w.defaultPrice||0;
     renderFExtras();
     return;
@@ -3788,9 +3805,9 @@ function renderFExtras(){
     list.innerHTML='<div style="font-size:.66rem;color:#888">尚未加入 — 例：同一集同時做剪輯＋Reels＋混音</div>';
     recomputeFAmount();return;
   }
-  const opts=x=>['<option value="">— 選擇工作項目 —</option>',
+  const opts=x=>[`<option value="">${(!x.workItemId&&x.label)?`✎ ${escHtml(x.label)}（自訂）`:'— 選擇工作項目 —'}</option>`,
     ...workItemList().map(w=>`<option value="${w.id}" ${x.workItemId===w.id?'selected':''}>${w.isBundle?'📦 ':''}${escHtml(w.label)}</option>`)].join('');
-  list.innerHTML=_fExtras.map((x,i)=>`<div style="display:grid;grid-template-columns:1fr 96px 56px 90px 26px;gap:6px;align-items:center;font-size:.72rem;background:#fff;border:1px solid #c8d8ec;border-radius:6px;padding:4px 6px">
+  list.innerHTML=_fExtras.map((x,i)=>`<div style="display:grid;grid-template-columns:1fr 96px 56px 90px 26px;gap:6px;align-items:center;font-size:.72rem;background:#fff;border:1px solid #c8d8ec;border-radius:6px;padding:4px 6px" data-fx-row>
     <select onchange="updateFExtra(${i},'workItemId',this.value)" style="font-size:.7rem;padding:3px 6px;border:1px solid #e3e0d6;border-radius:4px;background:#fff;font-family:inherit;min-width:0">${opts(x)}</select>
     <input type="number" value="${x.amount||''}" placeholder="金額" oninput="updateFExtra(${i},'amount',this.value)" style="font-size:.7rem;padding:3px 6px;border:1px solid #e3e0d6;border-radius:4px;font-family:'JetBrains Mono',monospace;text-align:right;outline:none">
     <input type="number" min="1" value="${x.qty||1}" oninput="updateFExtra(${i},'qty',this.value)" title="數量" style="font-size:.7rem;padding:3px 6px;border:1px solid #e3e0d6;border-radius:4px;font-family:'JetBrains Mono',monospace;text-align:center;outline:none">
@@ -3798,6 +3815,69 @@ function renderFExtras(){
     <button type="button" class="act-btn del" onclick="delFExtra(${i})" title="移除此項" style="padding:2px 4px">✕</button>
   </div>`).join('');
   recomputeFAmount();
+}
+// ── 從報價單匯入案件項目 ──
+let _qimpSel=new Set();
+function openQuoteImport(){
+  const cid=document.getElementById('f-client').value;
+  if(!cid){toast('請先選擇客戶',true);return;}
+  const items=S.clients[cid]?.quotation?.items||[];
+  if(!items.length){toast('此客戶的報價單目前沒有項目',true);return;}
+  _qimpSel=new Set(items.map(i=>i.itemId));   // 預設全選
+  renderQuoteImport();
+  openM('qimp-modal');
+}
+function renderQuoteImport(){
+  const cid=document.getElementById('f-client').value;
+  const items=S.clients[cid]?.quotation?.items||[];
+  document.getElementById('qimp-list').innerHTML=items.map(it=>{
+    const q=it.qty==null?1:it.qty;
+    const amt=(it.defaultPrice||0)*q;
+    return `<label style="display:grid;grid-template-columns:auto 1fr 90px;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line-soft);cursor:pointer;font-size:.74rem;${it.isAddon?'padding-left:26px;font-style:italic;color:#666':''}">
+      <input type="checkbox" ${_qimpSel.has(it.itemId)?'checked':''} onchange="qimpToggle('${it.itemId}',this.checked)" style="accent-color:#1e6038;margin:0">
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.isAddon?'▸ ':''}${escHtml(it.label||'')}<span style="color:#999;font-size:.62rem;margin-left:6px">${escHtml(it.category||'')}${q!==1?` ×${q}`:''}</span></span>
+      <span style="font-family:'JetBrains Mono',monospace;text-align:right;color:${amt<0?'#c53030':'#1e6038'}">$${fmtMoney(amt)}</span>
+    </label>`;
+  }).join('');
+  const sum=items.filter(i=>_qimpSel.has(i.itemId)).reduce((s,i)=>s+(i.defaultPrice||0)*(i.qty==null?1:i.qty),0);
+  document.getElementById('qimp-sum').textContent='$'+fmtMoney(sum);
+}
+function qimpToggle(id,on){on?_qimpSel.add(id):_qimpSel.delete(id);renderQuoteImport();}
+function confirmQuoteImport(){
+  const cid=document.getElementById('f-client').value;
+  const items=(S.clients[cid]?.quotation?.items||[]).filter(i=>_qimpSel.has(i.itemId));
+  if(!items.length){toast('請至少勾選一項',true);return;}
+  const mains=items.filter(i=>!i.isAddon);
+  const addonLines=items.filter(i=>i.isAddon);
+  const first=mains[0]||null;
+  _fExtras=[];
+  if(first){
+    const q1=first.qty==null?1:first.qty;
+    if(first.workItemId&&S.workItems[first.workItemId]){
+      setFciValue(first.workItemId,S.workItems[first.workItemId].label);   // 帶入主項＋種入加減項清單
+    }else{
+      setFciValue('','');
+    }
+    document.getElementById('f-amount').value=(first.defaultPrice||0)*q1;
+    _fAmountManuallyEdited=true;
+  }
+  // 主項的加減項 → 對到 _fAddons 數量；其餘加減項折成其他服務項目
+  const restAddons=[];
+  addonLines.forEach(a=>{
+    const hit=(first&&a.workItemId&&a.workItemId===first.workItemId)?_fAddons.find(x=>x.addonId===a.addonId):null;
+    if(hit)hit.qty=a.qty==null?1:a.qty;
+    else restAddons.push(a);
+  });
+  renderFAddons();
+  mains.slice(1).forEach(m=>{
+    _fExtras.push({id:uid(),workItemId:(m.workItemId&&S.workItems[m.workItemId])?m.workItemId:'',label:m.label||'',amount:m.defaultPrice||0,qty:m.qty==null?1:m.qty});
+  });
+  restAddons.forEach(a=>{
+    _fExtras.push({id:uid(),workItemId:'',label:`${a.label||''}（加減項）`,amount:a.defaultPrice||0,qty:a.qty==null?1:a.qty});
+  });
+  renderFExtras();
+  closeM('qimp-modal');
+  toast(`已從報價單匯入 ${items.length} 項`);
 }
 function onFAmountManualEdit(){_fAmountManuallyEdited=true;recomputeFAmount();}
 
@@ -3923,7 +4003,7 @@ function saveCase(){
   // invoice generation (which subtracts addons to derive the line price) still works
   const baseAmount=parseInt(document.getElementById('f-amount').value)||0;
   const addonSumAtSave=_fAddons.filter(a=>a.qty>0).reduce((s,a)=>s+(a.amount||0)*(a.qty||0),0);
-  const extrasAtSave=_fExtras.filter(x=>x.workItemId&&(x.amount||0)>0).map(x=>({id:x.id,workItemId:x.workItemId,label:x.label||S.workItems[x.workItemId]?.label||'',amount:x.amount||0,qty:x.qty||1}));
+  const extrasAtSave=_fExtras.filter(x=>(x.workItemId||x.label)&&(x.amount||0)!==0).map(x=>({id:x.id,workItemId:x.workItemId||null,label:x.label||(x.workItemId?S.workItems[x.workItemId]?.label:'')||'',amount:x.amount||0,qty:x.qty||1}));
   const extraSumAtSave=extrasAtSave.reduce((s,x)=>s+(x.amount||0)*(x.qty||1),0);
   const amount=baseAmount+addonSumAtSave+extraSumAtSave;
   // Read billing-link state
@@ -6921,7 +7001,7 @@ function buildInvoiceItemsFromCase(cs,overrideWi){
   const effectiveWi=overrideWi||caseWi;
   const caseAddons=(cs.pricing?.addons||[]).filter(a=>a.qty&&a.qty>0);
   const addonSum=caseAddons.reduce((s,a)=>s+(a.amount||0)*a.qty,0);
-  const caseExtras=(cs.pricing?.extraItems||[]).filter(x=>(x.amount||0)>0);
+  const caseExtras=(cs.pricing?.extraItems||[]).filter(x=>(x.amount||0)!==0);
   const extraSum=caseExtras.reduce((s,x)=>s+(x.amount||0)*(x.qty||1),0);
   const baseLinePrice=Math.max(0,(cs.pricing?.amount||0)-addonSum-extraSum);
   const out=[{
