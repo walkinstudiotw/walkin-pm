@@ -1983,14 +1983,6 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
       <div style="font-size:.62rem;color:#666;margin-top:3px">金流頁 2026/08 起的月份會自動帶出薪資支出，可逐月標記已發/未發並計入月損益</div>
     </div>
 
-    <div class="form-group full" style="background:var(--amber-soft);border:1px solid var(--amber-line);border-radius:10px;padding:10px 12px">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.78rem;font-weight:700;color:#a86a00">
-        <input type="checkbox" id="set-partial-pay" onchange="togglePartialPayments(this.checked)" style="accent-color:#a86a00">
-        💰 啟用部分入帳
-      </label>
-      <div style="font-size:.62rem;color:#666;margin-top:3px">開啟後 invoice 可分次記錄收款（金流頁應收列展開可「＋ 記收款」）；待收金額改用餘額計算。關閉後既有收款紀錄保留、介面回到「應收／已入帳」兩態</div>
-    </div>
-
     <div class="form-group full">
       <label class="form-label">Anthropic API Key（用於 AI 分析）</label>
       <input class="form-input" id="set-api-key" type="password" placeholder="sk-ant-...">
@@ -5845,7 +5837,6 @@ function loadSettings(){
   }catch(e){}
 }
 function openSettings(){
-  document.getElementById('set-partial-pay').checked=!!S.globalSettings?.partialPayments;
   document.getElementById('set-api-key').value=S.settings.apiKey||'';
   document.getElementById('set-ai-model').value=S.settings.aiModel||'claude-haiku-4-5-20251001';
   buildFlatPicker('set-ai-model','set-ai-model-trigger',
@@ -8882,16 +8873,17 @@ function confirmInvPay(){
   renderCashflow();
   toast(`已入帳 — ${inv.paidDate}`);
 }
-// ── 部分入帳（設定頁開關 settings/partialPayments；inv.payments=[{id,date,amount,note}]）──
-// 關閉時 invPartialPaid 一律回 0 → 所有口徑自動回到「應收/已入帳」兩態
-function ppEnabled(){return !!S.globalSettings?.partialPayments;}
-function invPartialPaid(inv){return ppEnabled()?(inv.payments||[]).reduce((s,p)=>s+(parseInt(p.amount)||0),0):0;}
+// ── 部分入帳（逐張 invoice 開關 inv.partialEnabled；inv.payments=[{id,date,amount,note}]）──
+// 該張關閉時 invPartialPaid 回 0 → 該張口徑回到「應收/已入帳」兩態，紀錄保留
+function invPartialPaid(inv){return inv?.partialEnabled?(inv.payments||[]).reduce((s,p)=>s+(parseInt(p.amount)||0),0):0;}
 function invBalance(inv){return Math.max(0,(inv.total||0)-invPartialPaid(inv));}
-function togglePartialPayments(on){
-  if(!_fbReady)return;
-  S.globalSettings=S.globalSettings||{};S.globalSettings.partialPayments=!!on;
-  _db.ref(`${ROOT}/settings/partialPayments`).set(!!on);
-  toast(on?'已啟用部分入帳':'已關閉部分入帳（收款紀錄保留）');
+function toggleInvPartial(id,on){
+  const inv=S.invoices[id];if(!inv)return;
+  inv.partialEnabled=!!on;
+  inv.updatedAt=Date.now();
+  saveInvoiceObj(inv);
+  renderCashflow();
+  toast(on?'此筆已啟用分次收款':'此筆改回單筆入帳（收款紀錄保留）');
 }
 let _ppTarget=null;
 function openPpModal(id){
@@ -9233,17 +9225,22 @@ function renderCashInvoiceRowCompany(inv){
         <div>項目</div><div style="text-align:right">金額</div><div style="text-align:right">外包</div><div style="text-align:right">稅</div><div style="text-align:right">公司淨額</div><div></div>
       </div>
       ${linesHtml}
-      ${ppEnabled()&&(inv.status==='sent'||(inv.payments||[]).length)?`<div style="margin:8px 0;padding:8px 10px;background:#fff;border:1px solid var(--amber-line);border-radius:7px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${(inv.payments||[]).length?'6px':'0'}">
-          <span style="font-size:.64rem;font-weight:700;color:#a86a00;letter-spacing:.4px">💰 收款紀錄${inv.status==='sent'?`（餘額 $${fmtMoney(invBalance(inv))}）`:''}</span>
-          ${inv.status==='sent'?`<button class="nav-btn" onclick="openPpModal('${inv.id}')" style="font-size:.64rem;padding:2px 8px;background:var(--amber-soft);border-color:var(--amber-line);color:#a86a00">＋ 記收款</button>`:''}
+      ${inv.status==='sent'||(inv.partialEnabled&&(inv.payments||[]).length)?`<div style="margin:8px 0;padding:8px 10px;background:#fff;border:1px solid var(--amber-line);border-radius:7px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:${inv.partialEnabled&&(inv.payments||[]).length?'6px':'0'}">
+          ${inv.status==='sent'
+            ?`<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.64rem;font-weight:700;color:#a86a00">
+                <input type="checkbox" ${inv.partialEnabled?'checked':''} onchange="toggleInvPartial('${inv.id}',this.checked)" style="accent-color:#a86a00;margin:0">
+                💰 分次收款${inv.partialEnabled?`（餘額 $${fmtMoney(invBalance(inv))}）`:''}
+              </label>`
+            :`<span style="font-size:.64rem;font-weight:700;color:#a86a00">💰 收款紀錄</span>`}
+          ${inv.partialEnabled&&inv.status==='sent'?`<button class="nav-btn" onclick="openPpModal('${inv.id}')" style="font-size:.64rem;padding:2px 8px;background:var(--amber-soft);border-color:var(--amber-line);color:#a86a00">＋ 記收款</button>`:''}
         </div>
-        ${(inv.payments||[]).map(p=>`<div style="display:grid;grid-template-columns:100px 1fr 110px 26px;gap:6px;align-items:center;margin-bottom:3px;font-size:.7rem">
+        ${inv.partialEnabled?(inv.payments||[]).map(p=>`<div style="display:grid;grid-template-columns:100px 1fr 110px 26px;gap:6px;align-items:center;margin-bottom:3px;font-size:.7rem">
           <span style="font-family:'JetBrains Mono',monospace;color:#666">${escHtml(p.date||'')}</span>
           <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#1a1a1a">${escHtml(p.note||'—')}</span>
           <span style="font-family:'JetBrains Mono',monospace;color:#1e6038;font-weight:700;text-align:right">$${fmtMoney(p.amount||0)}</span>
           <button class="act-btn del" onclick="delPpPayment('${inv.id}','${p.id}')" title="刪除此筆收款" style="padding:2px 4px">✕</button>
-        </div>`).join('')}
+        </div>`).join(''):''}
       </div>`:''}
       <div style="margin:8px 0;padding:8px 10px;background:#faf6ee;border:1px dashed #d8c8aa;border-radius:7px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${(inv.expenses||[]).length?'6px':'0'}">
