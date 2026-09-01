@@ -1274,6 +1274,15 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
       </div>
     </div>
 
+    <!-- 其他服務項目（一個案件包含多項服務） -->
+    <div class="form-group full" id="f-extras-section" style="background:#f4f7fb;border:1px solid #c8d8ec;border-radius:8px;padding:10px 12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px">
+        <label class="form-label" style="color:#1e4a80;margin:0">🧩 其他服務項目<span style="font-weight:400;color:#888;font-size:.62rem">（此案包含多項服務時加在這，金額併入收款金額）</span></label>
+        <button type="button" class="nav-btn" onclick="addFExtra()" style="font-size:.66rem;padding:2px 8px;flex-shrink:0">＋ 加一項</button>
+      </div>
+      <div id="f-extras-list" style="display:flex;flex-direction:column;gap:5px"></div>
+    </div>
+
     <!-- Billing link section: 獨立計費 / 附屬於另一個案件 -->
     <div class="form-group full" style="background:#ffffff;border:1px solid #e3e0d6;border-radius:8px;padding:10px 12px">
       <label class="form-label" style="margin-bottom:6px">💰 計費關聯</label>
@@ -3265,8 +3274,8 @@ function openAddCase(){
   document.getElementById('fci-panel').style.display='none';
   document.getElementById('f-type').value='Podcast';
   document.getElementById('ftyp-trigger-text').textContent='Podcast';
-  _fAddons=[];_fAmountManuallyEdited=false;
-  renderFAddons();
+  _fAddons=[];_fExtras=[];_fAmountManuallyEdited=false;
+  renderFAddons();renderFExtras();
   document.getElementById('f-amount').value='';
   document.getElementById('f-due').value='';
   document.getElementById('f-labor').value='齊';
@@ -3340,10 +3349,14 @@ function openEditCase(id){
   renderFAddons();
   document.getElementById('f-type').value=c.type||'Podcast';
   document.getElementById('ftyp-trigger-text').textContent=c.type||'Podcast';
-  // pricing.amount is stored as the FINAL total (base + addons). Extract the base
+  // 其他服務項目帶回
+  _fExtras=(c.pricing?.extraItems||[]).map(x=>({id:x.id||uid(),workItemId:x.workItemId||'',label:x.label||'',amount:x.amount||0,qty:x.qty||1}));
+  renderFExtras();
+  // pricing.amount is stored as the FINAL total (base + addons + extras). Extract the base
   // so the field reflects what the user originally typed.
   const savedAddonSum=_fAddons.reduce((s,a)=>s+(a.amount||0)*(a.qty||0),0);
-  const extractedBase=Math.max(0,(c.pricing?.amount||0)-savedAddonSum);
+  const savedExtraSum=_fExtras.reduce((s,x)=>s+(x.amount||0)*(x.qty||1),0);
+  const extractedBase=Math.max(0,(c.pricing?.amount||0)-savedAddonSum-savedExtraSum);
   document.getElementById('f-amount').value=extractedBase||'';
   document.getElementById('f-due').value=c.dueDate||'';
   document.getElementById('f-labor').value=c.laborOwner||'齊';
@@ -3739,12 +3752,52 @@ function recomputeFAmount(){
   const amtEl=document.getElementById('f-amount');
   const base=parseInt(amtEl?.value)||0;
   const addonSum=_fAddons.reduce((s,a)=>s+(a.amount||0)*(a.qty||0),0);
-  const total=base+addonSum;
+  const extraSum=_fExtras.reduce((s,x)=>s+(x.amount||0)*(x.qty||1),0);
+  const total=base+addonSum+extraSum;
   const totalEl=document.getElementById('f-addons-total');
   if(totalEl){
     totalEl.textContent='$'+fmtMoney(total);
     totalEl.style.color=total<0?'#c53030':'#1e6038';
   }
+}
+// ── 其他服務項目（一案多服務）：存 pricing.extraItems=[{id,workItemId,label,amount,qty}] ──
+let _fExtras=[];
+function addFExtra(){_fExtras.push({id:uid(),workItemId:'',label:'',amount:0,qty:1});renderFExtras();}
+function delFExtra(i){_fExtras.splice(i,1);renderFExtras();}
+function updateFExtra(i,k,v){
+  const x=_fExtras[i];if(!x)return;
+  if(k==='workItemId'){
+    x.workItemId=v;
+    const w=v?S.workItems[v]:null;
+    x.label=w?w.label:'';
+    if(w&&!(x.amount>0))x.amount=w.defaultPrice||0;
+    renderFExtras();
+    return;
+  }
+  if(k==='amount')x.amount=parseInt(v)||0;
+  if(k==='qty')x.qty=Math.max(1,parseInt(v)||1);
+  // 只更新該列小計，不重繪（保留輸入焦點）
+  const row=document.getElementById('f-extras-list')?.children[i];
+  const subEl=row?.querySelector('.fx-sub');
+  if(subEl)subEl.textContent='$'+fmtMoney((x.amount||0)*(x.qty||1));
+  recomputeFAmount();
+}
+function renderFExtras(){
+  const list=document.getElementById('f-extras-list');if(!list)return;
+  if(!_fExtras.length){
+    list.innerHTML='<div style="font-size:.66rem;color:#888">尚未加入 — 例：同一集同時做剪輯＋Reels＋混音</div>';
+    recomputeFAmount();return;
+  }
+  const opts=x=>['<option value="">— 選擇工作項目 —</option>',
+    ...workItemList().map(w=>`<option value="${w.id}" ${x.workItemId===w.id?'selected':''}>${w.isBundle?'📦 ':''}${escHtml(w.label)}</option>`)].join('');
+  list.innerHTML=_fExtras.map((x,i)=>`<div style="display:grid;grid-template-columns:1fr 96px 56px 90px 26px;gap:6px;align-items:center;font-size:.72rem;background:#fff;border:1px solid #c8d8ec;border-radius:6px;padding:4px 6px">
+    <select onchange="updateFExtra(${i},'workItemId',this.value)" style="font-size:.7rem;padding:3px 6px;border:1px solid #e3e0d6;border-radius:4px;background:#fff;font-family:inherit;min-width:0">${opts(x)}</select>
+    <input type="number" value="${x.amount||''}" placeholder="金額" oninput="updateFExtra(${i},'amount',this.value)" style="font-size:.7rem;padding:3px 6px;border:1px solid #e3e0d6;border-radius:4px;font-family:'JetBrains Mono',monospace;text-align:right;outline:none">
+    <input type="number" min="1" value="${x.qty||1}" oninput="updateFExtra(${i},'qty',this.value)" title="數量" style="font-size:.7rem;padding:3px 6px;border:1px solid #e3e0d6;border-radius:4px;font-family:'JetBrains Mono',monospace;text-align:center;outline:none">
+    <div class="fx-sub" style="text-align:right;font-family:'JetBrains Mono',monospace;font-weight:600;color:#1e6038">$${fmtMoney((x.amount||0)*(x.qty||1))}</div>
+    <button type="button" class="act-btn del" onclick="delFExtra(${i})" title="移除此項" style="padding:2px 4px">✕</button>
+  </div>`).join('');
+  recomputeFAmount();
 }
 function onFAmountManualEdit(){_fAmountManuallyEdited=true;recomputeFAmount();}
 
@@ -3870,7 +3923,9 @@ function saveCase(){
   // invoice generation (which subtracts addons to derive the line price) still works
   const baseAmount=parseInt(document.getElementById('f-amount').value)||0;
   const addonSumAtSave=_fAddons.filter(a=>a.qty>0).reduce((s,a)=>s+(a.amount||0)*(a.qty||0),0);
-  const amount=baseAmount+addonSumAtSave;
+  const extrasAtSave=_fExtras.filter(x=>x.workItemId&&(x.amount||0)>0).map(x=>({id:x.id,workItemId:x.workItemId,label:x.label||S.workItems[x.workItemId]?.label||'',amount:x.amount||0,qty:x.qty||1}));
+  const extraSumAtSave=extrasAtSave.reduce((s,x)=>s+(x.amount||0)*(x.qty||1),0);
+  const amount=baseAmount+addonSumAtSave+extraSumAtSave;
   // Read billing-link state
   const billingLinked=document.getElementById('f-billing-linked').checked;
   let linkedToCaseId=null;
@@ -3904,7 +3959,7 @@ function saveCase(){
     }:null,
     // 分潤設定 UI 已移除 — 既有案件保留原值（歷史分潤不變），新案件預設 true
     shareWithStudio:(S.editCaseId?(S.cases[S.editCaseId]?.shareWithStudio!==false):true),
-    pricing:{quotationItemId,amount:billingLinked?0:amount,addons:billingLinked?[]:_fAddons.filter(a=>a.qty>0).map(a=>({addonId:a.addonId,label:a.label,amount:a.amount,qty:a.qty}))},
+    pricing:{quotationItemId,amount:billingLinked?0:amount,addons:billingLinked?[]:_fAddons.filter(a=>a.qty>0).map(a=>({addonId:a.addonId,label:a.label,amount:a.amount,qty:a.qty})),extraItems:billingLinked?[]:extrasAtSave},
     billedExternally:document.getElementById('f-billed-external').checked,
     isProject:document.getElementById('f-is-project').checked,
     // 專案支出在金流頁專案卡維護 — 表單儲存時必須保留（整包覆蓋）
@@ -6866,7 +6921,9 @@ function buildInvoiceItemsFromCase(cs,overrideWi){
   const effectiveWi=overrideWi||caseWi;
   const caseAddons=(cs.pricing?.addons||[]).filter(a=>a.qty&&a.qty>0);
   const addonSum=caseAddons.reduce((s,a)=>s+(a.amount||0)*a.qty,0);
-  const baseLinePrice=Math.max(0,(cs.pricing?.amount||0)-addonSum);
+  const caseExtras=(cs.pricing?.extraItems||[]).filter(x=>(x.amount||0)>0);
+  const extraSum=caseExtras.reduce((s,x)=>s+(x.amount||0)*(x.qty||1),0);
+  const baseLinePrice=Math.max(0,(cs.pricing?.amount||0)-addonSum-extraSum);
   const out=[{
     itemId:uid(),
     sourceCaseId:cs.id,
@@ -6892,6 +6949,21 @@ function buildInvoiceItemsFromCase(cs,overrideWi){
       qty:a.qty,
       unit:addonDef?.unit||'',
       isAddon:true,
+    });
+  });
+  // 其他服務項目（一案多服務）→ 各自獨立一行
+  caseExtras.forEach(x=>{
+    const w=x.workItemId?S.workItems[x.workItemId]:null;
+    out.push({
+      itemId:uid(),
+      sourceCaseId:cs.id,
+      sourceWorkItemId:x.workItemId||null,
+      label:x.label||w?.label||'',
+      serviceLabel:w?w.label:(x.label||''),
+      category:w?(w.category||cs.type||''):(cs.type||''),
+      defaultPrice:x.amount||0,
+      qty:x.qty||1,
+      unit:w?.unit||'',
     });
   });
   return out;
