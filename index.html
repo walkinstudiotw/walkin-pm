@@ -1792,6 +1792,10 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
         <input class="form-input" id="pb-amt" type="number" inputmode="numeric" style="font-family:'JetBrains Mono',monospace">
       </div>
     </div>
+    <div class="form-group">
+      <label class="form-label">帳單月份（應收歸屬月／計入該月損益）</label>
+      <input class="form-input" id="pb-month" type="month" style="font-family:'JetBrains Mono',monospace">
+    </div>
     <div id="pb-err" style="font-size:.66rem;color:#c53030;min-height:15px"></div>
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeM('proj-bill-modal')">取消</button>
@@ -9232,6 +9236,10 @@ function openProjBill(caseId){
   _projBillId=caseId;
   document.getElementById('pb-name').textContent=c.title||'';
   setProjBillMode('full');
+  const now=new Date();
+  let ym=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  if(ym<COMPANY_ERA)ym=COMPANY_ERA;
+  document.getElementById('pb-month').value=ym;
   document.getElementById('pb-err').textContent='';
   openM('proj-bill-modal');
 }
@@ -9263,7 +9271,8 @@ function confirmProjBill(){
   const prefix=client.invoicePrefix||(client.name?client.name.charAt(0):'INV');
   const now=new Date();
   // 專案請款屬公司制：帳務月份最早從 COMPANY_ERA 起算（避免落入分潤制月份）
-  let billingMonth=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  // 帳單月份：modal 指定（預設當月）；clamp 到公司制起始月
+  let billingMonth=document.getElementById('pb-month')?.value||`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   if(billingMonth<COMPANY_ERA)billingMonth=COMPANY_ERA;
   const due=new Date();due.setDate(due.getDate()+30);
   const inv={
