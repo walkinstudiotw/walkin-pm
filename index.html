@@ -442,6 +442,11 @@ body{display:flex;flex-direction:column}
 .tbl tbody tr.wi-divider{cursor:default}
 .tbl tbody tr.wi-divider td{background:linear-gradient(90deg,#e8f0fc 0%,#fbfaf6 100%);color:#1e6038;font-size:.78rem;letter-spacing:.4px;font-weight:700;padding:11px 14px 9px;border-top:none;border-bottom:1px solid #e3e0d6;text-transform:none;border-left:3px solid #4dd87a}
 .tbl tbody tr.wi-divider-bundle td{color:#c084fc;background:linear-gradient(90deg,#f3e8fc 0%,#fbfaf6 100%);border-left-color:#c084fc;border-bottom-color:#2a1850}
+/* 附屬案件群組列：底色縮排＋連接符，與主案件成組 */
+.tbl tbody tr.case-child-row td{background:#f7f4ec}
+.tbl tbody tr.case-child-row:hover td{background:#f1ede2}
+.tbl tbody tr.case-child-row td:nth-child(2){padding-left:26px}
+.child-conn{color:#a08560;font-weight:700;margin-right:4px}
 
 /* WORKITEMS PENDING (auto-created from quotation, awaiting user confirmation) */
 .wi-row-pending td{color:#666!important;background:#ffffff!important;font-style:italic}
@@ -3098,7 +3103,7 @@ function caseRowHtml(c,childCounts,extraCls){
       const invBadge=c.invoiceId?`<span class="case-amount-linked-badge" title="已在 Invoice ${escHtml(S.invoices[c.invoiceId]?.invoiceNumber||'')} — 改金額會同步">🧾 已連動</span>`:'';
       amtStr=`<input type="number" class="case-amount-input" value="${amount||0}" onchange="updateCaseAmount('${c.id}',this.value)" title="點擊修改金額；已在 Invoice 中會同步">${childBadge}${invBadge}`;
     }
-    return`<tr class="${extraCls}" onclick="openEditCase('${c.id}')">
+    return`<tr class="${extraCls}${c.linkedToCaseId?' case-child-row':''}" onclick="openEditCase('${c.id}')">
       <td style="border-left:4px solid ${clientColor(c.clientId)}"><span class="ep-num">${escHtml(clientName(c.clientId))}</span></td>
       <td>${(()=>{
         if(c.isProject){
@@ -3112,7 +3117,13 @@ function caseRowHtml(c,childCounts,extraCls){
           return `<span onclick="event.stopPropagation();projToggleRows('${c.id}')" title="${closed?'展開':'收合'}附屬集" style="cursor:pointer;display:inline-block;width:15px;color:#1e6038;font-size:.66rem;transition:transform .15s;${closed?'transform:rotate(-90deg)':''}">▼</span><span style="background:#1e6038;color:#fff;border-radius:8px;padding:1px 7px;font-size:.62rem;font-weight:700;margin-right:5px">📦 專案</span><b>${escHtml(c.title||'')}</b>
             <div style="font-size:.6rem;color:#888;margin:3px 0 0 15px">集數 ${bar(kidsAll.length?doneN/kidsAll.length*100:0,'#1e6038')} <b style="font-family:'JetBrains Mono',monospace">${doneN}/${kidsAll.length}</b>　收款 ${bar(contract?billed/contract*100:0,'#a86a00')} <b style="font-family:'JetBrains Mono',monospace">$${fmtMoney(billed)}</b><span style="font-family:'JetBrains Mono',monospace;color:#bbb"> / $${fmtMoney(contract)}</span></div>`;
         }
-        return (c.linkedToCaseId?'<span style="color:#bbb">↳ </span>':'')+escHtml(c.title||'');
+        // 一般主案件有附屬 → 也給收合 toggle（沿用專案的 _projClosed 機制）
+        const kidsN=childCounts[c.id]||0;
+        if(!c.linkedToCaseId&&kidsN){
+          const closed=_projClosed.has(c.id);
+          return `<span onclick="event.stopPropagation();projToggleRows('${c.id}')" title="${closed?'展開':'收合'}附屬案件" style="cursor:pointer;display:inline-block;width:15px;color:#5a7a8a;font-size:.66rem;transition:transform .15s;${closed?'transform:rotate(-90deg)':''}">▼</span><b>${escHtml(c.title||'')}</b><span style="font-size:.6rem;color:#5a7a8a;margin-left:6px">${closed?`＋${kidsN} 附屬（已收合）`:''}</span>`;
+        }
+        return (c.linkedToCaseId?'<span class="child-conn">└</span>':'')+escHtml(c.title||'');
       })()}</td>
       <td><span class="type-pill">${escHtml(c.type||'')}</span></td>
       <td onclick="event.stopPropagation()">
