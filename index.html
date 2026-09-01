@@ -1068,10 +1068,14 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
     <div class="modal-title">📥 大量匯入案件</div>
     <p style="font-size:.72rem;color:#888;line-height:1.55;margin:0 0 8px">從 Excel / Google Sheets / Numbers 選一段含多列的資料 <b>(Cmd+C)</b>，貼到下方文字框 <b>(Cmd+V)</b>。系統會自動以 Tab 分欄解析、嘗試辨識欄位類型；你可以再對每一欄手動指派。</p>
     <textarea class="form-textarea" id="bi-input" placeholder="範例：&#10;嗨我是阿寬&#9;EP24 廢寶 索艾克&#9;Podcast&#9;2026/04/22&#9;包含在Video Podcast收費&#9;&#10;嗨我是阿寬&#9;EP23 林幼航&#9;Video Podcast&#9;2026/04/22&#9;7000元（未結）&#9;50min" oninput="parseBulkImport()" style="min-height:90px;font-family:'JetBrains Mono',monospace;font-size:.7rem"></textarea>
-    <div style="display:flex;gap:8px;align-items:center;margin:6px 0">
+    <div style="display:flex;gap:8px;align-items:center;margin:6px 0;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:6px;font-size:.7rem;color:#666666;cursor:pointer">
         <input type="checkbox" id="bi-has-header" onchange="parseBulkImport()" style="accent-color:#1e6038">
         首列為標題列（不匯入）
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:.7rem;color:#666666" title="貼純標題清單（沒有客戶欄）時，整批套用這個客戶；有客戶欄且比對到時以該欄為準">
+        整批指定客戶
+        <select id="bi-default-client" onchange="parseBulkImport()" style="font-size:.7rem;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:#fff;font-family:inherit;max-width:180px"></select>
       </label>
       <span class="spacer" style="flex:1"></span>
       <span style="font-size:.7rem;color:#666" id="bi-row-count"></span>
@@ -6146,6 +6150,9 @@ let _biSelected=[];  // boolean[] indexed by data row (after header skip)
 function openBulkImport(){
   document.getElementById('bi-input').value='';
   document.getElementById('bi-has-header').checked=false;
+  // 整批指定客戶選單
+  document.getElementById('bi-default-client').innerHTML=
+    '<option value="">— 不指定 —</option>'+clientList().map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
   document.getElementById('bi-status').textContent='';
   document.getElementById('bi-row-count').textContent='';
   document.getElementById('bi-preview-wrap').style.display='none';
@@ -6334,6 +6341,11 @@ function confirmBulkImport(){
         o[m]=v;
       }
     });
+    // 沒有客戶欄（或比對不到）時，套用「整批指定客戶」
+    if(!o.clientId){
+      const dc=document.getElementById('bi-default-client')?.value;
+      if(dc&&S.clients[dc])o.clientId=dc;
+    }
     if(!o.clientId){
       if(o.title||o.amount){issues.push(`第 ${i+1} 列：沒有對應客戶（已略過）`);}
       return;
