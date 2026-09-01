@@ -163,11 +163,12 @@ body{display:flex;flex-direction:column}
 
 /* CASHFLOW TAB */
 .cash-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;padding:14px}
-.cash-card{background:#ffffff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:4px;box-shadow:var(--shadow-card)}
-.cash-card.recv{border-color:#7de89a;background:#f0f8f2}
-.cash-card.pend{border-color:#f0c878;background:#fff8ee}
-.cash-card.paid{border-color:#5a9ae0;background:#eef4fc}
-.cash-card.studio{border-color:#a08560;background:#faf6ee}
+.cash-card{background:#ffffff;border:1px solid var(--line);border-left:4px solid var(--line-soft);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:4px;box-shadow:var(--shadow-card)}
+.cash-card.recv{border-left-color:#7de89a}
+.cash-card.pend{border-left-color:#f0c878}
+.cash-card.paid{border-left-color:#5a9ae0}
+.cash-card.studio{border-left-color:#a08560}
+.cash-card.out{border-left-color:#e8aaaa}
 .cash-card .lbl{font-size:.66rem;color:#666;letter-spacing:.4px;text-transform:uppercase;font-weight:700}
 .cash-card .val{font-family:'JetBrains Mono',monospace;font-size:1.1rem;color:#1a1a1a;font-weight:700}
 .cash-card .val.green{color:#1e6038}
@@ -199,11 +200,11 @@ body{display:flex;flex-direction:column}
 .cash-month-pill.studio{background:#faf6ee;border-color:#c8b088}
 .cash-month-pill.studio .v{color:#a08560}
 .cash-month-unpaid{font-size:.68rem;color:#a86a00;font-weight:600}
-/* 金流頁分區底色：每段落不同色帶區隔（極低飽和，配 1px 邊線） */
-#cash-timeline{background:#f1f5f0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:24px;padding-bottom:16px}
-#cash-list{background:#faf6ea;border-top:1px solid var(--line);margin-top:28px;padding-top:2px;padding-bottom:20px}
-#cash-outsource-section{background:#faf6ea;border-bottom:1px solid var(--line)}
-#cash-projects{background:#f0f2f5;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:28px;margin-bottom:12px}
+/* 金流頁分區：統一中性色帶（區隔靠間距與邊線，不用色相） */
+#cash-timeline{background:#fbfaf6;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:24px;padding-bottom:16px}
+#cash-list{background:#fbfaf6;border-top:1px solid var(--line);margin-top:28px;padding-top:2px;padding-bottom:20px}
+#cash-outsource-section{background:#fbfaf6;border-bottom:1px solid var(--line)}
+#cash-projects{background:#fbfaf6;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:28px;margin-bottom:12px}
 /* 金流時間軸 */
 .fc-rows{background:#ffffff;border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--shadow-card)}
 .fc-line{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid #f1eee6;cursor:pointer;font-size:.74rem;transition:background .12s}
@@ -8676,7 +8677,7 @@ function renderFixedCosts(){
   const annual=Math.round(monthly*12);
   const beFixed=(S.globalSettings?.breakeven?.fixed)||0;
   sum.innerHTML=`
-    <div class="cash-card" style="border-color:#e8aaaa;background:#fdf3f3">
+    <div class="cash-card out">
       <div class="lbl" style="color:#c53030">📤 每月固定成本</div>
       <div class="val" style="color:#c53030">$${fmtMoney(Math.round(monthly))}</div>
       <div class="sub">${act.length} 項啟用${items.length-act.length?` · ${items.length-act.length} 項停用`:''}</div>
@@ -9142,9 +9143,9 @@ function renderCompanyMonthSection(month,invs,nav){
   const pill=(cls,k,vHtml,uHtml='',style='')=>`<div class="cash-month-pill ${cls}" style="${style}"><div class="k">${k}</div><div class="v">${vHtml}</div>${uHtml}</div>`;
   const monthPretty=month.replace('-',' / ');
   return `<section class="cash-month">
-    <div class="cash-month-header" style="background:var(--green-soft);border-color:var(--green-line)">
+    <div class="cash-month-header" style="border-left:4px solid var(--green-line)">
       <div class="cmh-top">
-        <div class="cmh-title" style="color:#1e6038;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${nav?.pre||''}🏢 ${escHtml(monthPretty)} <span style="font-size:.6rem;font-weight:400;color:#666">公司制</span>${nav?.post||''}</div>
+        <div class="cmh-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${nav?.pre||''}🏢 ${escHtml(monthPretty)} <span style="font-size:.6rem;font-weight:400;color:#666">公司制</span>${nav?.post||''}</div>
         <div class="cmh-meta">${invs.length} 張 · <b>$${fmtMoney(sub)}</b></div>
       </div>
       <div class="cmh-pills">
@@ -9333,12 +9334,12 @@ function renderCashflow(){
       <div class="val green">$${fmtMoney(agg.paid.amt)}</div>
       <div class="sub">${agg.paid.count} 張 paid</div>
     </div>
-    ${agg.coN?`<div class="cash-card recv" style="border-color:var(--green-line)">
+    ${agg.coN?`<div class="cash-card recv">
       <div class="lbl" style="color:#1e6038">🏢 公司淨額</div>
       <div class="val green">$${fmtMoney(agg.coNet)}</div>
       <div class="sub">2026/08 起 · ${agg.coN} 張（薪資另計於各月）</div>
     </div>`:''}
-    ${agg.cost>0?`<div class="cash-card" style="border-color:#e8aaaa;background:#fde8e8">
+    ${agg.cost>0?`<div class="cash-card out">
       <div class="lbl" style="color:#c53030">📤 支出/外包成本</div>
       <div class="val" style="color:#c53030">$${fmtMoney(agg.cost)}</div>
       <div class="sub">已從淨額扣除</div>
@@ -9541,9 +9542,9 @@ function renderCashMonthSection(month,invs,nav){
     :'';
   const rowsHtml=invs.map(renderCashInvoiceRow).join('');
   return `<section class="cash-month">
-    <div class="cash-month-header" style="background:#fff8ee;border-color:#f0c878">
+    <div class="cash-month-header" style="border-left:4px solid #f0c878">
       <div class="cmh-top">
-        <div class="cmh-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:#a86a00">${nav?.pre||''}📅 ${escHtml(monthPretty)}${nav?.post||''}</div>
+        <div class="cmh-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${nav?.pre||''}📅 ${escHtml(monthPretty)}${nav?.post||''}</div>
         <div class="cmh-meta">${invs.length} 張 · <b>$${fmtMoney(total)}</b></div>
       </div>
       <div class="cmh-pills">
@@ -9725,9 +9726,9 @@ function renderOutsourceByMonth(cases){
       return `<button class="nav-btn" style="font-size:.8rem;padding:2px 10px;${ok?'':'opacity:.3;cursor:default'}" ${ok?`onclick="osNavMonth(${d})"`:''} title="${d<0?'上個月份':'下個月份'}">${sym}</button>`;
     };
     return `<section class="cash-month">
-      <div class="cash-month-header" style="background:#fdf3f3;border-color:#e8aaaa">
+      <div class="cash-month-header" style="border-left:4px solid #e8aaaa">
         <div class="cmh-top">
-          <div class="cmh-title" style="display:flex;align-items:center;gap:8px;color:#c53030">${navBtn(-1,'‹')}📅 ${escHtml(mPretty)}${navBtn(1,'›')}<span style="font-size:.6rem;font-weight:400;color:#999">${idx+1}/${_osKeys.length}</span></div>
+          <div class="cmh-title" style="display:flex;align-items:center;gap:8px">${navBtn(-1,'‹')}📅 ${escHtml(mPretty)}${navBtn(1,'›')}<span style="font-size:.6rem;font-weight:400;color:#999">${idx+1}/${_osKeys.length}</span></div>
           <div class="cmh-meta">${csArr.length} 案 · 應付 <b>$${fmtMoney(total)}</b></div>
         </div>
         <div class="cmh-pills">
@@ -10069,9 +10070,9 @@ function renderCashTimeline(){
       return `<button class="nav-btn" style="font-size:.8rem;padding:2px 10px;${ok?'':'opacity:.3;cursor:default'}" ${ok?`onclick="ctNavMonth(${d})"`:''} title="${d<0?'上個月份':'下個月份'}">${sym}</button>`;
     };
     return `<section class="cash-month">
-      <div class="cash-month-header" style="background:#f4f8fc;border-color:#a8c8e8">
+      <div class="cash-month-header" style="border-left:4px solid #a8c8e8">
         <div class="cmh-top">
-          <div class="cmh-title" style="display:flex;align-items:center;gap:8px;color:#1e4a80">${navBtn(-1,'‹')}📅 ${escHtml(pretty)}${navBtn(1,'›')}<span style="font-size:.6rem;font-weight:400;color:#999">${idx+1}/${_ctKeys.length}</span></div>
+          <div class="cmh-title" style="display:flex;align-items:center;gap:8px">${navBtn(-1,'‹')}📅 ${escHtml(pretty)}${navBtn(1,'›')}<span style="font-size:.6rem;font-weight:400;color:#999">${idx+1}/${_ctKeys.length}</span></div>
           <div class="cmh-meta" style="display:flex;align-items:center;gap:8px">${nItems} 筆 · 預估淨流入 <b style="color:${m.net>=0?'#1e6038':'#c53030'}">${m.net<0?'-':'+'}$${fmtMoney(Math.abs(m.net))}</b><button class="nav-btn" style="font-size:.62rem;padding:2px 10px" onclick="ctToggleRows()">${_ctExpand?'收起明細 ▴':'展開明細 ▾'}</button></div>
         </div>
         <div class="cmh-pills">
@@ -10093,7 +10094,7 @@ function renderCashTimeline(){
         <div class="val green">$${fmtMoney(tl.summary.inflow)}</div>
         <div class="sub">待收 $${fmtMoney(ts.A)} · 已完成未請款 $${fmtMoney(ts.B)} · 進行中 $${fmtMoney(ts.C)}${tl.summary.overdueA>0?` · <span style="color:#c53030;font-weight:700">含逾期 $${fmtMoney(tl.summary.overdueA)}</span>`:''}</div>
       </div>
-      <div class="cash-card" style="border-color:#e8aaaa;background:#fdf3f3">
+      <div class="cash-card out">
         <div class="lbl">📤 近 ${CT_MONTHS} 個月預估支出</div>
         <div class="val" style="color:#c53030">$${fmtMoney(tl.summary.outflow)}</div>
         <div class="sub">外包 $${fmtMoney(ts.O)} · 薪資 $${fmtMoney(ts.SAL)} · 專案支出 $${fmtMoney(ts.PEXP)} · 歷史勞務 $${fmtMoney(ts.L)}</div>
