@@ -1296,7 +1296,7 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
     <div class="form-group full" style="background:#ffffff;border:1px solid #e3e0d6;border-radius:8px;padding:10px 12px">
       <label class="form-label" style="margin-bottom:6px">💰 計費關聯</label>
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.78rem;margin-bottom:8px;background:var(--green-soft);border:1px solid var(--green-line);border-radius:8px;padding:6px 10px">
-        <input type="checkbox" id="f-is-project" style="accent-color:#1e6038">
+        <input type="checkbox" id="f-is-project" onchange="updateFCollabVisibility()" style="accent-color:#1e6038">
         <span>📦 此案為<b>專案</b>（一次簽多集：金額填合約總額，各集用「附屬案件」掛在此案下；請款/分期與支出在金流頁的專案卡操作）</span>
       </label>
       <div style="display:flex;gap:14px;font-size:.78rem;margin-bottom:8px">
@@ -1327,6 +1327,33 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
           <span>🗂 已在系統外請款（歷史案件 — 不列入預估、未請款篩選與月底結算）</span>
         </label>
       </div>
+    </div>
+
+    <!-- 協作設定（專案範本）— isProject 勾選時顯示 -->
+    <div class="form-group full" id="f-collab-tpl-section" style="display:none;background:var(--green-soft);border:1px solid var(--green-line);border-radius:8px;padding:10px 12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px">
+        <label class="form-label" style="color:var(--green);margin:0">👥 協作設定<span style="font-weight:400;color:#888;font-size:.62rem">（「每集」項目在新增附屬集時自動帶入；「單次」掛在專案本身）</span></label>
+        <button type="button" class="nav-btn" onclick="addFCollabTpl()" style="font-size:.66rem;padding:2px 8px;flex-shrink:0">＋ 加一列</button>
+      </div>
+      <div id="f-collab-tpl-list" style="display:flex;flex-direction:column;gap:5px"></div>
+      <div id="f-collab-tpl-sum" style="display:flex;justify-content:flex-end;gap:18px;font-size:.68rem;color:#666;margin-top:6px"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px">
+        <span style="font-size:.6rem;color:#888">改範本只影響之後新增的集；要更新既有集按右鍵 →</span>
+        <button type="button" class="nav-btn" onclick="applyCollabTplToKids()" style="font-size:.62rem;padding:2px 8px">套用到既有集（未付部分）</button>
+      </div>
+    </div>
+
+    <!-- 本集協作（多位外包/協作者）— 非專案案件顯示 -->
+    <div class="form-group full" id="f-collabs-section" style="background:#f4f7fb;border:1px solid #c8d8ec;border-radius:8px;padding:10px 12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px">
+        <label class="form-label" style="color:#1e4a80;margin:0">👥 本集協作<span style="font-weight:400;color:#888;font-size:.62rem">（多位協作者各自金額；付款在金流頁「應付款明細」勾選）</span></label>
+        <span style="display:flex;gap:6px;flex-shrink:0">
+          <button type="button" class="nav-btn" id="f-collabs-apply-tpl" onclick="applyParentTplToForm()" style="font-size:.62rem;padding:2px 8px;display:none">↧ 帶入主案範本</button>
+          <button type="button" class="nav-btn" onclick="addFCollab()" style="font-size:.66rem;padding:2px 8px">＋ 加一筆（僅此集）</button>
+        </span>
+      </div>
+      <div id="f-collabs-list" style="display:flex;flex-direction:column;gap:5px"></div>
+      <div style="font-size:.6rem;color:#888;margin-top:3px">本集協作合計 <span id="f-collabs-total" style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#c53030">$0</span> — 計入本集成本（公司淨額／體檢）並進應付款按人追蹤</div>
     </div>
 
     <div class="form-row-3">
@@ -3316,6 +3343,7 @@ function openAddCase(){
   document.getElementById('f-notes').value='';
   document.getElementById('f-outsourced').checked=false;
   _fCosts=[];renderFCosts();
+  _fCollabTpl=[];_fCollabs=[];renderFCollabTpl();renderFCollabs();updateFCollabVisibility();
   document.getElementById('f-outsourcer-id').value='';
   document.getElementById('f-outsource-hours').value='';
   document.getElementById('f-outsource-tier').value='';
@@ -3400,6 +3428,10 @@ function openEditCase(id){
     ?c.costItems.map(x=>({id:x.id||uid(),category:x.category||'其他',amount:x.amount||0}))
     :((c.cost>0)?[{id:uid(),category:c.costCategory||'其他',amount:c.cost}]:[]);
   renderFCosts();
+  // 協作：範本＋本集清單帶回
+  _fCollabTpl=(c.collabTemplate||[]).map(x=>({...x}));
+  _fCollabs=(c.collabs||[]).map(x=>({...x}));
+  renderFCollabTpl();renderFCollabs();updateFCollabVisibility();
   // restore outsource detail (outsourcerId / tier / rush)
   document.getElementById('f-outsourcer-id').value=c.outsource?.outsourcerId||'';
   document.getElementById('f-outsource-tier').value=c.outsource?.tierLabel||'';
@@ -3706,6 +3738,7 @@ function setFlinkValue(cid,label){
   document.getElementById('f-linked-to').value=cid;
   document.getElementById('flink-trigger-text').textContent=label;
   closePicker('flink');
+  updateFCollabVisibility();
 }
 // Track per-case addon state: [{addonId,label,amount,qty}]
 let _fAddons=[];
@@ -3773,6 +3806,166 @@ function updateFAddonQty(idx,val){
     subEl.style.color=sub<0?'#c53030':(sub>0?'#1e6038':'#888');
   }
   recomputeFAmount();
+}
+// ── 協作（一集多人）───────────────────────────────
+// 專案範本 case.collabTemplate=[{id,outsourcerId,name,role,amount,per:'ep'|'once'}]
+// 每集實際 case.collabs=[{id,tplId,outsourcerId,name,role,amount,paid,paidDate}]
+// 專案本身的 collabs = 範本「單次」項目物化（tplId 連結）；付款於金流應付款區勾選
+function collabSum(cs){return (cs?.collabs||[]).reduce((s,c)=>s+(parseInt(c.amount)||0),0);}
+function collabName(cb){return cb.outsourcerId?(S.outsourcers[cb.outsourcerId]?.name||cb.name||'(已刪除)'):(cb.name||'?');}
+let _fCollabTpl=[],_fCollabs=[];
+function _collabPersonOpts(row){
+  const customLabel=(!row.outsourcerId&&row.name)?`✎ ${escHtml(row.name)}（自訂）`:'— 選擇協作者 —';
+  return [`<option value="">${customLabel}</option>`,
+    ...outsourcerList().map(o=>`<option value="${o.id}" ${row.outsourcerId===o.id?'selected':''}>🤝 ${escHtml(o.name)}</option>`),
+    '<option value="__custom__">✎ 自訂名稱…</option>'].join('');
+}
+function _collabPersonChange(row,v){
+  if(v==='__custom__'){
+    const name=(prompt('協作者名稱（不在外包名單，例如：主持人、文案）：')||'').trim();
+    if(name){row.outsourcerId=null;row.name=name;}
+  }else if(v){
+    row.outsourcerId=v;row.name=S.outsourcers[v]?.name||'';
+  }
+  // v==='' 時保留原自訂名
+}
+function updateFCollabVisibility(){
+  const isProj=document.getElementById('f-is-project').checked;
+  document.getElementById('f-collab-tpl-section').style.display=isProj?'block':'none';
+  document.getElementById('f-collabs-section').style.display=isProj?'none':'block';
+  // 附屬案件且主案有範本 → 顯示「帶入主案範本」
+  const btn=document.getElementById('f-collabs-apply-tpl');
+  if(btn){
+    const linkedTo=document.getElementById('f-linked-to')?.value;
+    const parent=linkedTo?S.cases[linkedTo]:null;
+    btn.style.display=(!isProj&&parent?.collabTemplate?.some(t=>t.per!=='once'))?'inline-block':'none';
+  }
+}
+function addFCollabTpl(){_fCollabTpl.push({id:uid(),outsourcerId:null,name:'',role:'',amount:0,per:'ep'});renderFCollabTpl();}
+function delFCollabTpl(i){_fCollabTpl.splice(i,1);renderFCollabTpl();}
+function updateFCollabTpl(i,k,v){
+  const x=_fCollabTpl[i];if(!x)return;
+  if(k==='person'){_collabPersonChange(x,v);renderFCollabTpl();return;}
+  if(k==='role'){x.role=v;return;}
+  if(k==='amount'){x.amount=parseInt(v)||0;_fCollabTplSum();return;}
+  if(k==='per'){x.per=v;renderFCollabTpl();return;}
+}
+function _fCollabTplSum(){
+  const ep=_fCollabTpl.filter(x=>x.per!=='once').reduce((s,x)=>s+(x.amount||0),0);
+  const once=_fCollabTpl.filter(x=>x.per==='once').reduce((s,x)=>s+(x.amount||0),0);
+  const el=document.getElementById('f-collab-tpl-sum');
+  if(el)el.innerHTML=`<span>每集協作合計 <b style="font-family:'JetBrains Mono',monospace;color:#c53030">$${fmtMoney(ep)}</b>／集</span><span>單次合計 <b style="font-family:'JetBrains Mono',monospace;color:#1e4a80">$${fmtMoney(once)}</b></span>`;
+}
+function renderFCollabTpl(){
+  const list=document.getElementById('f-collab-tpl-list');if(!list)return;
+  if(!_fCollabTpl.length){
+    list.innerHTML='<div style="font-size:.64rem;color:#999">尚未設定 — 例：剪輯師 每集 $11,000、行銷廣告 單次 $30,000</div>';
+    _fCollabTplSum();return;
+  }
+  list.innerHTML=_fCollabTpl.map((x,i)=>`<div style="display:grid;grid-template-columns:1.1fr 1fr 90px 108px 26px;gap:6px;align-items:center;background:#fff;border:1px solid var(--green-line);border-radius:6px;padding:4px 6px">
+    <select class="form-select" style="font-size:.7rem;padding:3px 6px;min-width:0" onchange="updateFCollabTpl(${i},'person',this.value)">${_collabPersonOpts(x)}</select>
+    <input class="form-input" value="${escHtml(x.role||'')}" placeholder="角色/項目" oninput="updateFCollabTpl(${i},'role',this.value)" style="font-size:.7rem;padding:3px 6px">
+    <input class="form-input" type="number" value="${x.amount||''}" placeholder="金額" inputmode="numeric" oninput="updateFCollabTpl(${i},'amount',this.value)" style="font-size:.7rem;padding:3px 6px;font-family:'JetBrains Mono',monospace;text-align:right">
+    <span style="display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;font-size:.62rem">
+      <button type="button" style="border:0;padding:3px 8px;cursor:pointer;background:${x.per!=='once'?'var(--green-soft)':'#fff'};color:${x.per!=='once'?'var(--green)':'#bbb'};font-weight:700" onclick="updateFCollabTpl(${i},'per','ep')">每集</button>
+      <button type="button" style="border:0;padding:3px 8px;cursor:pointer;background:${x.per==='once'?'var(--anno-soft)':'#fff'};color:${x.per==='once'?'var(--anno)':'#bbb'};font-weight:700" onclick="updateFCollabTpl(${i},'per','once')">單次</button>
+    </span>
+    <button type="button" class="act-btn del" onclick="delFCollabTpl(${i})" style="padding:2px 4px">✕</button>
+  </div>`).join('');
+  _fCollabTplSum();
+}
+function addFCollab(){_fCollabs.push({id:uid(),tplId:null,outsourcerId:null,name:'',role:'',amount:0,paid:false,paidDate:null});renderFCollabs();}
+function delFCollab(i){_fCollabs.splice(i,1);renderFCollabs();}
+function updateFCollab(i,k,v){
+  const x=_fCollabs[i];if(!x)return;
+  if(k==='person'){_collabPersonChange(x,v);renderFCollabs();return;}
+  if(k==='role'){x.role=v;return;}
+  if(k==='amount'){x.amount=parseInt(v)||0;_fCollabsTotal();return;}
+}
+function _fCollabsTotal(){
+  const el=document.getElementById('f-collabs-total');
+  if(el)el.textContent='$'+fmtMoney(_fCollabs.reduce((s,x)=>s+(x.amount||0),0));
+}
+function renderFCollabs(){
+  const list=document.getElementById('f-collabs-list');if(!list)return;
+  if(!_fCollabs.length){
+    list.innerHTML='<div style="font-size:.64rem;color:#999">尚無協作者 — 附屬集會在建立時自動帶入主案範本；也可手動加</div>';
+    _fCollabsTotal();return;
+  }
+  list.innerHTML=_fCollabs.map((x,i)=>`<div style="display:grid;grid-template-columns:1.1fr 1fr 90px 66px 26px;gap:6px;align-items:center;background:#fff;border:1px solid #c8d8ec;border-radius:6px;padding:4px 6px">
+    <select class="form-select" style="font-size:.7rem;padding:3px 6px;min-width:0" onchange="updateFCollab(${i},'person',this.value)">${_collabPersonOpts(x)}</select>
+    <input class="form-input" value="${escHtml(x.role||'')}" placeholder="角色/項目" oninput="updateFCollab(${i},'role',this.value)" style="font-size:.7rem;padding:3px 6px">
+    <input class="form-input" type="number" value="${x.amount||''}" placeholder="金額" inputmode="numeric" oninput="updateFCollab(${i},'amount',this.value)" style="font-size:.7rem;padding:3px 6px;font-family:'JetBrains Mono',monospace;text-align:right">
+    <span style="font-size:.6rem;font-weight:700;color:${x.paid?'var(--green)':'var(--amber)'};text-align:center">${x.paid?`已付${x.paidDate?'<br>'+escHtml(x.paidDate.slice(5)):''}`:'未付'}</span>
+    <button type="button" class="act-btn del" onclick="delFCollab(${i})" title="移除（已付的請先在金流頁取消付款）" style="padding:2px 4px">✕</button>
+  </div>`).join('');
+  _fCollabsTotal();
+}
+// 帶入主案範本（附屬集手動觸發；只補缺少的範本項）
+function applyParentTplToForm(){
+  const linkedTo=document.getElementById('f-linked-to')?.value;
+  const parent=linkedTo?S.cases[linkedTo]:null;
+  if(!parent?.collabTemplate){toast('主案件沒有協作範本',true);return;}
+  let added=0;
+  parent.collabTemplate.filter(t=>t.per!=='once').forEach(t=>{
+    if(_fCollabs.some(c=>c.tplId===t.id))return;
+    _fCollabs.push({id:uid(),tplId:t.id,outsourcerId:t.outsourcerId||null,name:t.name||'',role:t.role||'',amount:t.amount||0,paid:false,paidDate:null});
+    added++;
+  });
+  renderFCollabs();
+  toast(added?`已帶入 ${added} 筆協作`:'範本項目都已在清單中');
+}
+// 範本「單次」項目 → 物化/校正到專案自己的 collabs（保留已付快照）
+function reconcileOnceCollabs(existing,tpl){
+  const out=[];
+  const exByTpl={};(existing||[]).forEach(c=>{if(c.tplId)exByTpl[c.tplId]=c;});
+  (tpl||[]).filter(t=>t.per==='once').forEach(t=>{
+    const ex=exByTpl[t.id];
+    if(ex){
+      out.push(ex.paid?ex:{...ex,outsourcerId:t.outsourcerId||null,name:t.name||'',role:t.role||'',amount:t.amount||0});
+      delete exByTpl[t.id];
+    }else{
+      out.push({id:uid(),tplId:t.id,outsourcerId:t.outsourcerId||null,name:t.name||'',role:t.role||'',amount:t.amount||0,paid:false,paidDate:null});
+    }
+  });
+  // 範本已移除的：已付保留（歷史），未付丟棄；非範本項保留
+  Object.values(exByTpl).forEach(c=>{if(c.paid)out.push(c);});
+  (existing||[]).forEach(c=>{if(!c.tplId)out.push(c);});
+  return out;
+}
+// 套用範本到既有附屬集（補缺、未付項更新金額；已付不動）
+function applyCollabTplToKids(){
+  if(!S.editCaseId){toast('請先儲存專案後再套用',true);return;}
+  const proj=S.cases[S.editCaseId];if(!proj)return;
+  const tpl=_fCollabTpl.filter(x=>(x.outsourcerId||x.name)&&(x.amount||0)>0&&x.per!=='once');
+  const kids=Object.values(S.cases||{}).filter(x=>x.linkedToCaseId===proj.id);
+  if(!kids.length){toast('此專案沒有附屬集',true);return;}
+  showConf('套用範本到既有集？',`將把 ${tpl.length} 筆「每集」協作套用到 ${kids.length} 個附屬集：缺少的補上、未付的更新金額，已付的不動。`,()=>{
+    let touched=0;
+    kids.forEach(k=>{
+      k.collabs=k.collabs||[];
+      let dirty=false;
+      tpl.forEach(t=>{
+        const ex=k.collabs.find(c=>c.tplId===t.id);
+        if(!ex){k.collabs.push({id:uid(),tplId:t.id,outsourcerId:t.outsourcerId||null,name:t.name||'',role:t.role||'',amount:t.amount||0,paid:false,paidDate:null});dirty=true;}
+        else if(!ex.paid&&(ex.amount!==t.amount||ex.role!==t.role)){ex.amount=t.amount||0;ex.role=t.role||'';ex.outsourcerId=t.outsourcerId||null;ex.name=t.name||'';dirty=true;}
+      });
+      if(dirty){k.updatedAt=Date.now();saveCaseObj(k);touched++;}
+    });
+    toast(`已套用到 ${touched} 個附屬集`);
+  });
+}
+// 金流應付款區勾選協作付款
+function collabTogglePaid(caseId,collabId,checked){
+  const cs=S.cases[caseId];if(!cs)return;
+  const cb=(cs.collabs||[]).find(x=>x.id===collabId);if(!cb)return;
+  cb.paid=!!checked;
+  if(checked){const d=new Date();cb.paidDate=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+  else cb.paidDate=null;
+  cs.updatedAt=Date.now();
+  saveCaseObj(cs);
+  renderCashflow();
+  toast(checked?`已付款 — ${collabName(cb)} $${fmtMoney(cb.amount||0)}`:'已改回未付');
 }
 // ── 案件支出（多筆，可自訂分類；cs.cost 存合計、cs.costItems 存明細）──
 let _fCosts=[];
@@ -4067,6 +4260,23 @@ function saveCase(){
     linkedToCaseId=document.getElementById('f-linked-to').value||null;
     if(!linkedToCaseId){saveCaseError('請選擇要附屬的主案件','flink-trigger');return;}
   }
+  // 協作：範本（僅專案）與本集清單組裝；新附屬集自動帶入主案「每集」範本
+  const _isProjChecked=document.getElementById('f-is-project').checked;
+  const _collabTplAtSave=_isProjChecked
+    ?_fCollabTpl.filter(x=>(x.outsourcerId||x.name)&&(x.amount||0)>0).map(x=>({id:x.id,outsourcerId:x.outsourcerId||null,name:x.name||'',role:x.role||'',amount:x.amount||0,per:x.per==='once'?'once':'ep'}))
+    :((S.editCaseId?(S.cases[S.editCaseId]?.collabTemplate??null):null)??[]);
+  let _collabsAtSave;
+  if(_isProjChecked){
+    // 專案本身的 collabs＝範本「單次」項目物化（保留已付快照）
+    _collabsAtSave=reconcileOnceCollabs(S.editCaseId?(S.cases[S.editCaseId]?.collabs||[]):[],_collabTplAtSave);
+  }else{
+    _collabsAtSave=_fCollabs.filter(x=>(x.outsourcerId||x.name)&&(x.amount||0)>0).map(x=>({id:x.id,tplId:x.tplId||null,outsourcerId:x.outsourcerId||null,name:x.name||'',role:x.role||'',amount:x.amount||0,paid:!!x.paid,paidDate:x.paidDate||null}));
+    if(!S.editCaseId&&linkedToCaseId&&!_collabsAtSave.length){
+      (S.cases[linkedToCaseId]?.collabTemplate||[]).filter(t=>t.per!=='once').forEach(t=>{
+        _collabsAtSave.push({id:uid(),tplId:t.id,outsourcerId:t.outsourcerId||null,name:t.name||'',role:t.role||'',amount:t.amount||0,paid:false,paidDate:null});
+      });
+    }
+  }
   // Preserve existing invoiceId if any (set by invoice creation flow)
   // Use ?? null to defend against legacy data with no invoiceId field (undefined breaks Firebase set)
   const existingInvoiceId=(S.editCaseId?S.cases[S.editCaseId]?.invoiceId:null)??null;
@@ -4084,6 +4294,8 @@ function saveCase(){
     isOutsourced:document.getElementById('f-outsourced').checked,
     cost:_fCosts.filter(x=>(x.amount||0)>0).reduce((s,x)=>s+(x.amount||0),0),
     costItems:_fCosts.filter(x=>(x.amount||0)>0).map(x=>({id:x.id,category:x.category||'其他',amount:x.amount||0})),
+    collabTemplate:_collabTplAtSave,
+    collabs:_collabsAtSave,
     outsource:document.getElementById('f-outsourced').checked?{
       outsourcerId:document.getElementById('f-outsourcer-id').value||null,
       tierLabel:document.getElementById('f-outsource-tier').value||null,
@@ -8678,9 +8890,9 @@ function asCaseHours(c){return (c.timeLogs||[]).reduce((s,l)=>s+(parseFloat(l.ho
 function asRowData(c){
   const kids=c.isProject?Object.values(S.cases||{}).filter(x=>x.linkedToCaseId===c.id):[];
   const hours=asCaseHours(c)+kids.reduce((s,k)=>s+asCaseHours(k),0);
-  const ownCost=c.isOutsourced?computeOutsourceCost(c):(c.cost||0);
+  const ownCost=(c.isOutsourced?computeOutsourceCost(c):(c.cost||0))+collabSum(c);
   const cost=ownCost
-    +kids.reduce((s,k)=>s+(k.isOutsourced?computeOutsourceCost(k):(k.cost||0)),0)
+    +kids.reduce((s,k)=>s+(k.isOutsourced?computeOutsourceCost(k):(k.cost||0))+collabSum(k),0)
     +(c.projectExpenses||[]).reduce((s,e)=>s+(parseInt(e.amount)||0),0);
   const parts=projectBilledParts(c.id).filter(p=>p.inv.status!=='draft');
   const billed=parts.reduce((s,p)=>s+p.amt,0);
@@ -9058,7 +9270,8 @@ function computeInvoiceCompany(inv){
       }
     }
     const cs=it.sourceCaseId?S.cases[it.sourceCaseId]:null;
-    const cost=(it.cost!=null)?(parseInt(it.cost)||0):(cs?(cs.isOutsourced?computeOutsourceCost(cs):(cs.cost||0)):0);
+    // 成本＝單一外包（或手動支出 fallback）＋本集協作合計；專案 stage invoice 不加專案層協作（避免跨期重複計）
+    const cost=(it.cost!=null)?(parseInt(it.cost)||0):(cs?((cs.isOutsourced?computeOutsourceCost(cs):(cs.cost||0))+(cs.isProject?0:collabSum(cs))):0);
     const tax=(taxable&&sub>0)?Math.round(sub-sub/1.05):0;
     lines.push({it,itemIdx:i,addonCount,cs,sub,tax,cost,net:sub-tax-cost});
     totals.sub+=sub;totals.tax+=tax;totals.cost+=cost;totals.net+=sub-tax-cost;
@@ -9213,7 +9426,7 @@ function renderProjectCards(){
     const tax=live.reduce((s,p)=>s+(p.inv.taxExempt?Math.round(p.amt-p.amt/1.05):0),0);
     const kids=Object.values(S.cases||{}).filter(x=>x.linkedToCaseId===c.id);
     const doneN=kids.filter(x=>(x.status||'todo')==='done').length;
-    const out=kids.reduce((s,k)=>s+(k.isOutsourced?computeOutsourceCost(k):(k.cost||0)),0)
+    const out=kids.reduce((s,k)=>s+(k.isOutsourced?computeOutsourceCost(k):(k.cost||0))+collabSum(k),0)+collabSum(c)
              +(c.isOutsourced?computeOutsourceCost(c):(c.cost||0));
     const exp=(c.projectExpenses||[]).reduce((s,e)=>s+(parseInt(e.amount)||0),0);
     const netNow=billed-tax-out-exp;
@@ -9854,27 +10067,43 @@ function toggleCashRow(id){
 }
 // ── 應付外包款 by outsourcer ──
 // One outsource case row (used by both grouping modes)
-function renderOutsourceCaseRow(cs){
-  const cost=computeOutsourceCost(cs);
-  const isPaid=!!cs.outsource?.paidAt;
-  const tier=cs.outsource?.tierLabel||'';
-  const rush=cs.outsource?.isRush?' <span style="color:#a86a00;font-size:.6rem">急件</span>':'';
-  const client=S.clients[cs.clientId];
-  const o=S.outsourcers[cs.outsource?.outsourcerId];
-  // In 分月 mode we show the outsourcer's name in the "who" line for context
-  const whoBits=[escHtml(client?.name||'?'),escHtml(tier)+rush];
-  if(o)whoBits.unshift(`🤝 ${escHtml(o.name||'(已刪除)')}`);
-  return `<div class="cash-line" style="grid-template-columns:1fr 90px 80px 100px 90px;cursor:pointer" onclick="openEditCase('${cs.id}')">
-    <div class="lab">${escHtml(cs.title||'(無標題)')}<div class="who">${whoBits.join(' · ')}</div></div>
-    <div class="num" style="font-size:.66rem;color:#888">${cs.dueDate||'—'}</div>
-    <div class="num">$${fmtMoney(cost)}</div>
-    <div onclick="event.stopPropagation()">
-      <div class="cash-status-toggle">
-        <button class="${!isPaid?'active sent':''}" onclick="setOutsourcePaid('${cs.id}',false)">未付</button>
-        <button class="${isPaid?'active paid':''}" onclick="setOutsourcePaid('${cs.id}',true)">已付</button>
-      </div>
-    </div>
-    <div class="num" style="color:${isPaid?'#1e6038':'#c53030'};font-weight:700">$${fmtMoney(cost)}</div>
+// 統一應付項目：單一外包（kind:'outsource'）＋協作明細（kind:'collab'）
+function buildPayableEntries(){
+  const out=[];
+  Object.values(S.cases||{}).forEach(cs=>{
+    if(!cs)return;
+    if(cs.isOutsourced&&cs.outsource?.outsourcerId){
+      const o=S.outsourcers[cs.outsource.outsourcerId];
+      out.push({kind:'outsource',caseId:cs.id,title:cs.title||'(無標題)',clientId:cs.clientId,dueDate:cs.dueDate||'',
+        personKey:'o:'+cs.outsource.outsourcerId,personLabel:o?.name||'(已刪除)',outsourcerId:cs.outsource.outsourcerId,
+        role:[cs.outsource.tierLabel||'',cs.outsource.isRush?'急件':''].filter(Boolean).join('·'),
+        amount:computeOutsourceCost(cs),paid:!!cs.outsource.paidAt,paidDate:''});
+    }
+    (cs.collabs||[]).forEach(cb=>{
+      const amt=parseInt(cb.amount)||0;
+      if(amt<=0)return;
+      out.push({kind:'collab',caseId:cs.id,collabId:cb.id,title:cs.title||'(無標題)',clientId:cs.clientId,dueDate:cs.dueDate||'',
+        personKey:cb.outsourcerId?('o:'+cb.outsourcerId):('n:'+(cb.name||'?')),personLabel:collabName(cb),outsourcerId:cb.outsourcerId||null,
+        role:cb.role||'',amount:amt,paid:!!cb.paid,paidDate:cb.paidDate||''});
+    });
+  });
+  return out;
+}
+function renderPayableRow(e){
+  const client=S.clients[e.clientId];
+  const whoBits=[`${e.kind==='collab'?'👥':'🤝'} ${escHtml(e.personLabel)}`,escHtml(client?.name||'?')];
+  if(e.role)whoBits.push(escHtml(e.role));
+  const toggle=e.kind==='outsource'
+    ?`<button class="${!e.paid?'active sent':''}" onclick="setOutsourcePaid('${e.caseId}',false)">未付</button>
+      <button class="${e.paid?'active paid':''}" onclick="setOutsourcePaid('${e.caseId}',true)">已付</button>`
+    :`<button class="${!e.paid?'active sent':''}" onclick="collabTogglePaid('${e.caseId}','${e.collabId}',false)">未付</button>
+      <button class="${e.paid?'active paid':''}" onclick="collabTogglePaid('${e.caseId}','${e.collabId}',true)">已付</button>`;
+  return `<div class="cash-line" style="grid-template-columns:1fr 90px 80px 100px 90px;cursor:pointer" onclick="openEditCase('${e.caseId}')">
+    <div class="lab">${escHtml(e.title)}<div class="who">${whoBits.join(' · ')}</div></div>
+    <div class="num" style="font-size:.66rem;color:#888">${e.dueDate||'—'}${e.paid&&e.paidDate?`<div style="color:#1e6038">付 ${escHtml(e.paidDate.slice(5))}</div>`:''}</div>
+    <div class="num">$${fmtMoney(e.amount)}</div>
+    <div onclick="event.stopPropagation()"><div class="cash-status-toggle">${toggle}</div></div>
+    <div class="num" style="color:${e.paid?'#1e6038':'#c53030'};font-weight:700">$${fmtMoney(e.amount)}</div>
   </div>`;
 }
 function setOutMode(mode){
@@ -9890,28 +10119,30 @@ function renderOutsourcePayables(){
   const el=document.getElementById('cash-outsource-section');
   if(!el)return;
   const monthSel=document.getElementById('cash-filter-month')?.value||'all';
-  const allCases=Object.values(S.cases||{}).filter(cs=>cs.isOutsourced&&cs.outsource?.outsourcerId);
-  let cases=monthSel==='all'?allCases:allCases.filter(cs=>cs.dueDate&&cs.dueDate.startsWith(monthSel));
+  const allEntries=buildPayableEntries();
+  let entries=monthSel==='all'?allEntries:allEntries.filter(e=>e.dueDate&&e.dueDate.startsWith(monthSel));
   // Apply outsource-side filters
   const mode=S.cashFilter.outMode||'month';
   const personSel=S.cashFilter.outPerson||'all';
-  if(personSel!=='all')cases=cases.filter(cs=>cs.outsource.outsourcerId===personSel);
+  if(personSel!=='all')entries=entries.filter(e=>e.personKey===personSel);
   // Compute grand totals from the (possibly filtered) set
   let totalAll=0,paidAll=0;
-  cases.forEach(cs=>{const c=computeOutsourceCost(cs);totalAll+=c;if(cs.outsource?.paidAt)paidAll+=c;});
+  entries.forEach(e=>{totalAll+=e.amount;if(e.paid)paidAll+=e.amount;});
   const pendAll=totalAll-paidAll;
-  // Build person picker options — always show all people so user can switch
-  const personOptions=[{v:'all',label:'全部外包人員'},
-    ...outsourcerList().map(o=>({v:o.id,label:o.name}))];
-  const personLabel=personOptions.find(o=>o.v===personSel)?.label||'全部外包人員';
+  // Person picker options：外包名單＋協作出現過的自訂名稱
+  const customNames=[...new Set(allEntries.filter(e=>e.personKey.startsWith('n:')).map(e=>e.personLabel))];
+  const personOptions=[{v:'all',label:'全部協作/外包'},
+    ...outsourcerList().map(o=>({v:'o:'+o.id,label:'🤝 '+o.name})),
+    ...customNames.map(n=>({v:'n:'+n,label:'👥 '+n}))];
+  const personLabel=personOptions.find(o=>o.v===personSel)?.label||'全部協作/外包';
   // Body
   let bodyHtml='';
-  if(!cases.length){
-    bodyHtml=`<div style="padding:22px;text-align:center;color:#666;font-size:.78rem;background:#f8f8f8;border:1px dashed #e3e0d6;border-radius:8px">此範圍內沒有外包款</div>`;
+  if(!entries.length){
+    bodyHtml=`<div style="padding:22px;text-align:center;color:#666;font-size:.78rem;background:#f8f8f8;border:1px dashed #e3e0d6;border-radius:8px">此範圍內沒有應付款</div>`;
   }else if(mode==='month'){
-    bodyHtml=renderOutsourceByMonth(cases);
+    bodyHtml=renderOutsourceByMonth(entries);
   }else{
-    bodyHtml=renderOutsourceByPerson(cases);
+    bodyHtml=renderOutsourceByPerson(entries);
   }
   // Header controls
   el.innerHTML=`<div style="padding:12px 14px 0">
@@ -9947,12 +10178,12 @@ function osNavMonth(d){
   _osSel=_osKeys[i];
   renderOutsourcePayables();
 }
-function renderOutsourceByMonth(cases){
+function renderOutsourceByMonth(entries){
   const byMonth=new Map();
-  cases.forEach(cs=>{
-    const m=cs.dueDate?cs.dueDate.slice(0,7):'(未設交期)';
+  entries.forEach(e=>{
+    const m=e.dueDate?e.dueDate.slice(0,7):'(未設交期)';
     if(!byMonth.has(m))byMonth.set(m,[]);
-    byMonth.get(m).push(cs);
+    byMonth.get(m).push(e);
   });
   // Sort months asc（‹ 較早 / › 較晚）, undated last
   const monthKeys=[...byMonth.keys()].sort((a,b)=>{
@@ -9968,12 +10199,13 @@ function renderOutsourceByMonth(cases){
     _osSel=_osKeys.find(k=>k!=='(未設交期)'&&k>=curYM)||_osKeys[_osKeys.length-1]||null;
   }
   return monthKeys.filter(m=>m===_osSel).map(m=>{
-    const csArr=byMonth.get(m).sort((a,b)=>(b.dueDate||'').localeCompare(a.dueDate||''));
+    const arr=byMonth.get(m).sort((a,b)=>(b.dueDate||'').localeCompare(a.dueDate||'')||a.personLabel.localeCompare(b.personLabel,'zh-Hant'));
     let total=0,paid=0;
-    csArr.forEach(cs=>{const c=computeOutsourceCost(cs);total+=c;if(cs.outsource?.paidAt)paid+=c;});
+    arr.forEach(e=>{total+=e.amount;if(e.paid)paid+=e.amount;});
     const pend=total-paid;
     const mPretty=m.includes('-')?m.replace('-',' / '):m;
-    const rows=csArr.map(renderOutsourceCaseRow).join('');
+    const rows=arr.map(renderPayableRow).join('');
+    const csArr=arr;
     const idx=_osKeys.indexOf(m);
     const navBtn=(d,sym)=>{
       const ok=idx+d>=0&&idx+d<_osKeys.length;
@@ -9983,7 +10215,7 @@ function renderOutsourceByMonth(cases){
       <div class="cash-month-header" style="border-left:4px solid #e8aaaa">
         <div class="cmh-top">
           <div class="cmh-title" style="display:flex;align-items:center;gap:8px">${navBtn(-1,'‹')}📅 ${escHtml(mPretty)}${navBtn(1,'›')}<span style="font-size:.6rem;font-weight:400;color:#999">${idx+1}/${_osKeys.length}</span></div>
-          <div class="cmh-meta">${csArr.length} 案 · 應付 <b>$${fmtMoney(total)}</b></div>
+          <div class="cmh-meta">${csArr.length} 筆 · 應付 <b>$${fmtMoney(total)}</b></div>
         </div>
         <div class="cmh-pills">
           <div class="cash-month-pill pend"><div class="k">待付</div><div class="v">$${fmtMoney(pend)}</div></div>
@@ -10001,30 +10233,25 @@ function renderOutsourceByMonth(cases){
     </section>`;
   }).join('');
 }
-// 依外包人員：existing grouping — one card per outsourcer with their cases inside.
-function renderOutsourceByPerson(cases){
-  const byOs=new Map();
-  cases.forEach(cs=>{
-    const oid=cs.outsource.outsourcerId;
-    const arr=byOs.get(oid)||[];arr.push(cs);byOs.set(oid,arr);
+// 依協作者：每人一張卡（外包＋協作統一），逐筆勾付款
+function renderOutsourceByPerson(entries){
+  const byP=new Map();
+  entries.forEach(e=>{
+    const arr=byP.get(e.personKey)||[];arr.push(e);byP.set(e.personKey,arr);
   });
-  return [...byOs.entries()].map(([oid,csArr])=>{
-    const o=S.outsourcers[oid];
-    const oname=o?o.name:'(已刪除)';
-    let totalGroup=0,paidGroup=0;
-    csArr.sort((a,b)=>(b.dueDate||'').localeCompare(a.dueDate||''));
-    const rowsHtml=csArr.map(cs=>{
-      const c=computeOutsourceCost(cs);
-      totalGroup+=c;
-      if(cs.outsource?.paidAt)paidGroup+=c;
-      return renderOutsourceCaseRow(cs);
-    }).join('');
+  return [...byP.entries()].map(([pk,arr])=>{
+    const o=pk.startsWith('o:')?S.outsourcers[pk.slice(2)]:null;
+    const pname=o?o.name:(arr[0]?.personLabel||'?');
+    let totalGroup=0,paidGroup=0,paidN=0;
+    arr.sort((a,b)=>(a.dueDate||'9999').localeCompare(b.dueDate||'9999'));
+    arr.forEach(e=>{totalGroup+=e.amount;if(e.paid){paidGroup+=e.amount;paidN++;}});
+    const rowsHtml=arr.map(renderPayableRow).join('');
     const pendGroup=totalGroup-paidGroup;
-    const bankInfo=o?`${o.bank||'(銀行未設)'} ${o.bankAccount||''}`:'';
+    const bankInfo=o?`${o.bank||'(銀行未設)'} ${o.bankAccount||''}`:'自訂協作者（無銀行資訊）';
     return `<div class="cash-row" style="margin-bottom:8px">
       <div class="cash-row-head" style="cursor:default">
-        <div class="ino" style="grid-column:1/3">🤝 ${escHtml(oname)}<div style="font-size:.62rem;color:#888;font-family:'JetBrains Mono',monospace;margin-top:2px">${escHtml(bankInfo)}</div></div>
-        <div class="mon">${csArr.length} 案</div>
+        <div class="ino" style="grid-column:1/3">${o?'🤝':'👥'} ${escHtml(pname)}<div style="font-size:.62rem;color:#888;font-family:'JetBrains Mono',monospace;margin-top:2px">${escHtml(bankInfo)}</div></div>
+        <div class="mon">已付 ${paidN}/${arr.length} 筆</div>
         <div></div>
         <div class="amt"><span style="color:#888;font-size:.6rem">應付</span> $${fmtMoney(totalGroup)}<div style="font-size:.6rem;color:${pendGroup?'#c53030':'#1e6038'};margin-top:2px">${pendGroup?`待付 $${fmtMoney(pendGroup)}`:'✅ 全部已付'}</div></div>
         <div></div>
@@ -10188,6 +10415,15 @@ function computeCashTimeline(){
     const o=S.outsourcers[cs.outsource.outsourcerId];
     const ym=(cs.dueDate||'').slice(0,7);
     buckets.get(keyFor(ym)).outflows.push({tier:'O',label:`外包 ${o?.name||'?'}｜${cs.title||''}`,date:cs.dueDate||'',amt:cost,click:`openEditCase('${cs.id}')`});
+  });
+  // O: 協作待付（一集多人）→ 案件交期月份；專案「單次」項掛專案交期
+  Object.values(S.cases||{}).forEach(cs=>{
+    (cs?.collabs||[]).forEach(cb=>{
+      if(cb.paid)return;
+      const amt=parseInt(cb.amount)||0;
+      if(amt<=0)return;
+      buckets.get(keyFor((cs.dueDate||'').slice(0,7))).outflows.push({tier:'O',label:`協作 ${collabName(cb)}｜${cs.title||''}`,date:cs.dueDate||'',amt,click:`openEditCase('${cs.id}')`});
+    });
   });
   // 彙整
   const tierOrder={A:0,B:1,C:2,O:0,SAL:1,PEXP:2,L:3};
