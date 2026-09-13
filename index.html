@@ -10226,14 +10226,15 @@ function renderOutsourceByMonth(entries){
       const ok=idx+d>=0&&idx+d<_osKeys.length;
       return `<button class="nav-btn" style="font-size:.8rem;padding:2px 10px;${ok?'':'opacity:.3;cursor:default'}" ${ok?`onclick="osNavMonth(${d})"`:''} title="${d<0?'上個月份':'下個月份'}">${sym}</button>`;
     };
+    const allPaid=pend<=0;
     return `<section class="cash-month">
-      <div class="cash-month-header" style="border-left:4px solid #e8aaaa">
+      <div class="cash-month-header" style="${allPaid?'border-left:4px solid var(--green-line);background:var(--green-soft)':'border-left:4px solid #e8aaaa;background:#fdf6f4'}">
         <div class="cmh-top">
-          <div class="cmh-title" style="display:flex;align-items:center;gap:8px">${navBtn(-1,'‹')}📅 ${escHtml(mPretty)}${navBtn(1,'›')}<span style="font-size:.6rem;font-weight:400;color:#999">${idx+1}/${_osKeys.length}</span></div>
+          <div class="cmh-title" style="display:flex;align-items:center;gap:8px">${navBtn(-1,'‹')}📅 ${escHtml(mPretty)}${navBtn(1,'›')}<span style="font-size:.6rem;font-weight:400;color:#999">${idx+1}/${_osKeys.length}</span>${allPaid?'<span style="background:var(--green);color:#fff;border-radius:8px;padding:0 8px;font-size:.6rem;font-weight:700">✅ 全部已付</span>':'<span style="background:var(--red-soft);border:1px solid var(--red-line);color:var(--red);border-radius:8px;padding:0 8px;font-size:.6rem;font-weight:700">尚有未付</span>'}</div>
           <div class="cmh-meta">${csArr.length} 筆 · 應付 <b>$${fmtMoney(total)}</b></div>
         </div>
         <div class="cmh-pills">
-          <div class="cash-month-pill pend"><div class="k">待付</div><div class="v">$${fmtMoney(pend)}</div></div>
+          ${allPaid?'':`<div class="cash-month-pill" style="background:var(--red-soft);border-color:var(--red-line)"><div class="k" style="color:var(--red)">待付</div><div class="v" style="color:var(--red)">$${fmtMoney(pend)}</div></div>`}
           <div class="cash-month-pill recv"><div class="k">已付</div><div class="v">$${fmtMoney(paid)}</div></div>
         </div>
       </div>
