@@ -792,7 +792,7 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
         <div class="sb-item" data-tab="invoices"><span class="ico">🧾</span>Invoice</div>
         <div class="sb-item" data-tab="cashflow"><span class="ico">💵</span>金流</div>
         <div class="sb-item" data-tab="fixedcosts"><span class="ico">🏠</span>固定成本</div>
-        <div class="sb-item" data-tab="assessment"><span class="ico">📊</span>專案管理</div>
+        <div class="sb-item" data-tab="assessment"><span class="ico">📊</span>時間管理</div>
       </div>
     </div>
     <div class="sb-bottom">
@@ -2704,7 +2704,7 @@ const TAB_META={
   invoices:{ico:'🧾',label:'Invoice',addBtn:null},
   cashflow:{ico:'💵',label:'金流',addBtn:null},
   fixedcosts:{ico:'🏠',label:'固定成本',addBtn:{txt:'＋ 新增固定成本',fn:'openAddFixedCost'}},
-  assessment:{ico:'📊',label:'專案管理（體檢）',addBtn:null},
+  assessment:{ico:'📊',label:'時間管理（體檢）',addBtn:null},
 };
 // ── MOBILE SIDEBAR DRAWER ──
 function toggleMobileSidebar(){document.body.classList.toggle('sb-open');}
@@ -4325,7 +4325,7 @@ function saveCase(){
     isProject:document.getElementById('f-is-project').checked,
     // 專案支出在金流頁專案卡維護 — 表單儲存時必須保留（整包覆蓋）
     projectExpenses:(S.editCaseId?(S.cases[S.editCaseId]?.projectExpenses??null):null),
-    // 工時 log 與體檢標記在「專案管理」頁維護 — 一樣保留
+    // 工時 log 與體檢標記在「時間管理」頁維護 — 一樣保留
     timeLogs:(S.editCaseId?(S.cases[S.editCaseId]?.timeLogs??null):null),
     assessment:(S.editCaseId?(S.cases[S.editCaseId]?.assessment??null):null),
     linkedToCaseId,
