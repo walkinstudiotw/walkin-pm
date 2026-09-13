@@ -1420,15 +1420,7 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
         <span style="font-size:.7rem;color:#666">支出自動算 = </span>
         <span id="f-outsource-cost-display" style="font-family:'JetBrains Mono',monospace;color:#1e6038;font-weight:700;font-size:.85rem">$0</span>
       </div>
-      <div style="display:flex;gap:14px;align-items:center;margin-top:8px;padding-top:8px;border-top:1px dashed #b8e0c4;font-size:.74rem;flex-wrap:wrap">
-        <span style="color:#1e6038;font-weight:700;font-size:.68rem">外包成本歸屬</span>
-        <label style="display:flex;align-items:center;gap:5px;cursor:pointer" title="先分潤，再由負責人的份額支付外包費（外包＝替代自己勞務的決策成本）">
-          <input type="radio" name="f-cost-bearer" id="f-cost-bearer-owner" value="owner" style="accent-color:#1e6038"> 勞務方自付（先分後扣）
-        </label>
-        <label style="display:flex;align-items:center;gap:5px;cursor:pointer" title="外包費視為專案成本，先自專案扣除後才分潤（三方共同承擔）">
-          <input type="radio" name="f-cost-bearer" id="f-cost-bearer-project" value="project" style="accent-color:#1e6038"> 專案共同（先扣再分）
-        </label>
-      </div>
+<!-- 外包成本歸屬 UI 已移除（分潤制設定；公司制不分潤用不到）— 既有案件的 costBearer 值保留 -->
       <div id="f-outsource-filename-preview" style="display:none;margin-top:8px;padding:6px 10px;background:#fbfaf6;border:1px dashed #e3e0d6;border-radius:6px;font-size:.66rem;color:#666;font-family:'JetBrains Mono',monospace"></div>
     </div>
 
@@ -3329,8 +3321,6 @@ function openAddCase(){
   document.getElementById('f-outsource-tier').value='';
   document.getElementById('f-outsource-rush').checked=false;
   // 新案件預設：外包成本由勞務方自付（先分後扣）
-  document.getElementById('f-cost-bearer-owner').checked=true;
-  document.getElementById('f-cost-bearer-project').checked=false;
   onFOutsourcedChange();
   document.getElementById('f-share-studio').checked=true;  // default share with studio
   // billing-link defaults: independent
@@ -3416,9 +3406,6 @@ function openEditCase(id){
   document.getElementById('f-outsource-rush').checked=!!c.outsource?.isRush;
   document.getElementById('f-outsource-hours').value=c.outsource?.hours||'';
   // 外包成本歸屬：舊資料無欄位 → project（維持歷史分潤數字不變）
-  const bearer=c.outsource?.costBearer==='owner'?'owner':'project';
-  document.getElementById('f-cost-bearer-owner').checked=bearer==='owner';
-  document.getElementById('f-cost-bearer-project').checked=bearer==='project';
   onFOutsourcedChange();
   // shareWithStudio default true (legacy cases without the field share by default)
   document.getElementById('f-share-studio').checked=c.shareWithStudio!==false;
@@ -4102,7 +4089,8 @@ function saveCase(){
       tierLabel:document.getElementById('f-outsource-tier').value||null,
       isRush:document.getElementById('f-outsource-rush').checked,
       hours:parseFloat(document.getElementById('f-outsource-hours').value)||0,
-      costBearer:document.getElementById('f-cost-bearer-owner').checked?'owner':'project',
+      // UI 已移除 — 保留既有值（歷史分潤計算仍需）；新案件預設 project
+      costBearer:(S.editCaseId?(S.cases[S.editCaseId]?.outsource?.costBearer??null):null)??'project',
       paidAt:S.editCaseId?(S.cases[S.editCaseId]?.outsource?.paidAt??null):null,
     }:null,
     // 分潤設定 UI 已移除 — 既有案件保留原值（歷史分潤不變），新案件預設 true
