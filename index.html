@@ -3444,6 +3444,7 @@ function openEditCase(id){
   // billing-link state
   const isLinked=!!c.linkedToCaseId;
   document.getElementById('f-is-project').checked=!!c.isProject;
+  updateFCollabVisibility();
   document.getElementById('f-billed-external').checked=!!c.billedExternally;
   document.getElementById('f-billing-independent').checked=!isLinked;
   document.getElementById('f-billing-linked').checked=isLinked;
@@ -3954,6 +3955,18 @@ function applyCollabTplToKids(){
     });
     toast(`已套用到 ${touched} 個附屬集`);
   });
+}
+// 金流專案卡 →「👥 協作」：開專案表單並捲到協作設定區（短暫高亮）
+function openProjCollab(caseId){
+  openEditCase(caseId);
+  setTimeout(()=>{
+    const sec=document.getElementById('f-collab-tpl-section');
+    if(sec&&sec.style.display!=='none'){
+      sec.scrollIntoView({block:'center',behavior:'smooth'});
+      sec.style.boxShadow='0 0 0 3px var(--green-line)';
+      setTimeout(()=>{sec.style.boxShadow='';},1600);
+    }
+  },150);
 }
 // 金流應付款區勾選協作付款
 function collabTogglePaid(caseId,collabId,checked){
@@ -9463,10 +9476,12 @@ function renderProjectCards(){
         <span style="margin-left:auto"></span>
         ${remain>0?`<button class="nav-btn primary" style="font-size:.68rem" onclick="openProjBill('${c.id}')">＋ 開請款</button>`:'<span class="due-badge" style="background:var(--green-soft);color:#1e6038;border:1px solid var(--green-line)">已全額請款</span>'}
         <button class="nav-btn" style="font-size:.68rem;background:var(--amber-soft);border-color:var(--amber-line);color:var(--amber)" onclick="openProjExp('${c.id}')">＋ 支出</button>
+        <button class="nav-btn" style="font-size:.68rem;background:#f4f7fb;border-color:#c8d8ec;color:#1e4a80" onclick="openProjCollab('${c.id}')" title="設定此專案的協作者（每集/單次）">👥 協作</button>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;padding:10px 14px 4px">
         ${kpi('已請款',`$${fmtMoney(billed)}`,null,`${live.length} 期${remain>0?' · 未請 $'+fmtMoney(remain):''}`)}
         ${kpi('已入帳 / 應收',`$${fmtMoney(recv)}<span style="color:#a86a00;font-size:.74rem"> / $${fmtMoney(wait)}</span>`,'#1e6038')}
+        ${(()=>{const epTpl=(c.collabTemplate||[]).filter(t=>t.per!=='once').reduce((s,t)=>s+(t.amount||0),0);return epTpl?kpi('每集協作（範本）',`-$${fmtMoney(epTpl)}<span style="font-size:.64rem;color:#888">/集</span>`,'#1e4a80'):'';})()}
         ${kpi('外包（各集）',out?'-$'+fmtMoney(out):'—','#c53030')}
         ${kpi('專案支出',exp?'-$'+fmtMoney(exp):'—','#c53030')}
         ${kpi('代繳稅（已請款）',tax?'-$'+fmtMoney(tax):'—','#c53030')}
