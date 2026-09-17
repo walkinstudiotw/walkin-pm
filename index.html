@@ -9635,16 +9635,7 @@ function renderCompanyMonthSection(month,invs,nav){
       <div style="font-size:.6rem;color:#888">按請款月（權責）：收入 − 稅 − 外包 − 專案支出 − 薪資 ＝ 淨利；收入全數入公司帳，不分潤</div>
     </div>
     ${salaryOn?renderSalaryBlock(month,sal):''}
-    <div>${(()=>{
-      // 已實際入帳在前（分組小標），未收在後
-      const paidArr=invs.filter(i=>i.status==='paid');
-      const sentArr=invs.filter(i=>i.status!=='paid');
-      const hdr=(t,c)=>`<div style="font-size:.64rem;font-weight:800;color:${c};padding:8px 4px 2px">${t}</div>`;
-      let h='';
-      if(paidArr.length)h+=hdr('✅ 已收款','var(--green)')+paidArr.map(renderCashInvoiceRowCompany).join('');
-      if(sentArr.length)h+=hdr('⏳ 待收款','var(--amber)')+sentArr.map(renderCashInvoiceRowCompany).join('');
-      return h;
-    })()}</div>
+    <div>${invs.map(renderCashInvoiceRowCompany).join('')}</div>
   </section>`;
 }
 function renderSalaryBlock(month,sal){
@@ -9843,13 +9834,12 @@ function renderCashflow(){
   // Render invoice rows
   if(!invs.length){list.innerHTML='';empty.style.display='flex';return;}
   empty.style.display='none';
-  // 排序：月份新→舊；同月「已實際入帳」排最上（按入帳日早→晚），未收按付款期限早→晚
+  // Sort by month desc, then status (sent first), then createdAt
   invs.sort((a,b)=>{
     const m=(b.billingMonth||'').localeCompare(a.billingMonth||'');
     if(m!==0)return m;
-    if(a.status!==b.status)return a.status==='paid'?-1:1;
-    if(a.status==='paid')return (a.paidDate||'').localeCompare(b.paidDate||'');
-    return (a.dueDate||'9999').localeCompare(b.dueDate||'9999');
+    if(a.status!==b.status)return a.status==='sent'?-1:1;
+    return (b.createdAt||0)-(a.createdAt||0);
   });
   // Decide layout: flat when a specific month is picked or a status is filtered,
   // grouped-by-month otherwise (matches user's mental model of monthly income)
@@ -10224,24 +10214,12 @@ function renderOutsourceByMonth(entries){
     _osSel=_osKeys.find(k=>k!=='(未設交期)'&&k>=curYM)||_osKeys[_osKeys.length-1]||null;
   }
   return monthKeys.filter(m=>m===_osSel).map(m=>{
-    // 已實際付款在前（按付款日早→晚），未付按交期早→晚
-    const arr=byMonth.get(m).sort((a,b)=>{
-      if(a.paid!==b.paid)return a.paid?-1:1;
-      if(a.paid)return (a.paidDate||'').localeCompare(b.paidDate||'');
-      return (a.dueDate||'9999').localeCompare(b.dueDate||'9999')||a.personLabel.localeCompare(b.personLabel,'zh-Hant');
-    });
+    const arr=byMonth.get(m).sort((a,b)=>(b.dueDate||'').localeCompare(a.dueDate||'')||a.personLabel.localeCompare(b.personLabel,'zh-Hant'));
     let total=0,paid=0;
     arr.forEach(e=>{total+=e.amount;if(e.paid)paid+=e.amount;});
     const pend=total-paid;
     const mPretty=m.includes('-')?m.replace('-',' / '):m;
-    const rows=(()=>{
-      const paidArr=arr.filter(e=>e.paid),pendArr=arr.filter(e=>!e.paid);
-      const hdr=(t,c)=>`<div style="font-size:.64rem;font-weight:800;color:${c};padding:8px 4px 2px">${t}</div>`;
-      let h='';
-      if(paidArr.length)h+=hdr('✅ 已付款','var(--green)')+paidArr.map(renderPayableRow).join('');
-      if(pendArr.length)h+=hdr('⏳ 待付款','var(--red)')+pendArr.map(renderPayableRow).join('');
-      return h;
-    })();
+    const rows=arr.map(renderPayableRow).join('');
     const csArr=arr;
     const idx=_osKeys.indexOf(m);
     const navBtn=(d,sym)=>{
