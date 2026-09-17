@@ -10474,6 +10474,63 @@ function markCaseBilledExternally(id){
     toast('已標記 — 不再列入預估');
   });
 }
+// 本月已實際收付（時間軸明細卡置頂用）：已入帳 invoice／部分收款、
+// 已付外包/協作、已發薪資、專案支出 — 按實際日期歸月，不影響預估合計
+function buildActualRowsForMonth(m){
+  const rows=[];let inn=0,out=0;
+  invoiceList().forEach(inv=>{
+    const c=S.clients[inv.clientId];
+    const name=`${inv.invoiceNumber||''}｜${c?.name||'?'}`;
+    const pd=(inv.paidDate||'').replace(/\//g,'-');
+    if(inv.status==='paid'&&pd.slice(0,7)===m){
+      rows.push({dir:1,label:name+(inv.stageLabel?`（${inv.stageLabel}）`:''),date:pd,amt:inv.total||0,click:`jumpToInvoice('${inv.id}')`});
+      inn+=inv.total||0;
+    }else if(inv.status==='sent'&&inv.partialEnabled){
+      (inv.payments||[]).forEach(p=>{
+        const ppd=((p.paidDate||p.date||'')+'').replace(/\//g,'-');
+        if(p.paid!==false&&ppd.slice(0,7)===m){
+          const a=parseInt(p.amount)||0;
+          rows.push({dir:1,label:`${name}（部分收款${p.note?'·'+p.note:''}）`,date:ppd,amt:a,click:`jumpToInvoice('${inv.id}')`});
+          inn+=a;
+        }
+      });
+    }
+  });
+  Object.values(S.cases||{}).forEach(cs=>{
+    if(!cs)return;
+    if(cs.isOutsourced&&cs.outsource?.paidAt){
+      const d=new Date(cs.outsource.paidAt);
+      const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      if(ym===m){
+        const a=computeOutsourceCost(cs);
+        if(a>0){rows.push({dir:-1,label:`外包 ${S.outsourcers[cs.outsource.outsourcerId]?.name||'?'}｜${cs.title||''}`,date:`${ym}-${String(d.getDate()).padStart(2,'0')}`,amt:a,click:`openEditCase('${cs.id}')`});out+=a;}
+      }
+    }
+    (cs.collabs||[]).forEach(cb=>{
+      if(cb.paid&&((cb.paidDate||'').slice(0,7)===m)){
+        const a=parseInt(cb.amount)||0;
+        if(a>0){rows.push({dir:-1,label:`協作 ${collabName(cb)}｜${cs.title||''}`,date:cb.paidDate||'',amt:a,click:`openEditCase('${cs.id}')`});out+=a;}
+      }
+    });
+    if(cs.isProject)(cs.projectExpenses||[]).forEach(e=>{
+      if((e.date||'').slice(0,7)===m){
+        const a=parseInt(e.amount)||0;
+        if(a>0){rows.push({dir:-1,label:`專案支出 ${e.label||e.category||''}｜${cs.title||''}`,date:e.date||'',amt:a,click:`openEditCase('${cs.id}')`});out+=a;}
+      }
+    });
+  });
+  Object.entries(S.salaryPayments||{}).forEach(([mon,by])=>{
+    Object.entries(by||{}).forEach(([k,p])=>{
+      if(!p?.paid)return;
+      const pd=(p.date||'').replace(/\//g,'-');
+      if((pd.slice(0,7)||mon)!==m)return;
+      const a=parseInt(p.amount)||0;
+      if(a>0){rows.push({dir:-1,label:`薪資 ${k==='qi'?'齊':'巫'}｜${mon.replace('-','/')}`,date:pd,amt:a,click:''});out+=a;}
+    });
+  });
+  rows.sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  return {rows,inn,out};
+}
 // A 行付款期限 badge（承接原「入帳時程」）
 function ctDueBadge(due){
   if(!due)return '<span style="color:#999;font-size:.62rem">無期限</span>';
@@ -10590,6 +10647,8 @@ function renderCashTimeline(){
     }).join('');
     const idx=_ctKeys.indexOf(m.key);
     const nItems=m.inflows.length+m.outflows.length;
+    // 本月已實際收付（僅實際月份；later/nodate 不適用）
+    const act=/^\d{4}-\d{2}$/.test(m.key)?buildActualRowsForMonth(m.key):{rows:[],inn:0,out:0};
     const navBtn=(d,sym)=>{
       const ok=idx+d>=0&&idx+d<_ctKeys.length;
       return `<button class="nav-btn" style="font-size:.8rem;padding:2px 10px;${ok?'':'opacity:.3;cursor:default'}" ${ok?`onclick="ctNavMonth(${d})"`:''} title="${d<0?'上個月份':'下個月份'}">${sym}</button>`;
@@ -10598,14 +10657,25 @@ function renderCashTimeline(){
       <div class="cash-month-header" style="border-left:4px solid #a8c8e8">
         <div class="cmh-top">
           <div class="cmh-title" style="display:flex;align-items:center;gap:8px">${navBtn(-1,'‹')}📅 ${escHtml(pretty)}${navBtn(1,'›')}<span style="font-size:.6rem;font-weight:400;color:#999">${idx+1}/${_ctKeys.length}</span></div>
-          <div class="cmh-meta" style="display:flex;align-items:center;gap:8px">${nItems} 筆 · 預估淨流入 <b style="color:${m.net>=0?'#1e6038':'#c53030'}">${m.net<0?'-':'+'}$${fmtMoney(Math.abs(m.net))}</b><button class="nav-btn" style="font-size:.62rem;padding:2px 10px" onclick="ctToggleRows()">${_ctExpand?'收起明細 ▴':'展開明細 ▾'}</button></div>
+          <div class="cmh-meta" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${nItems} 筆 · 預估淨流入 <b style="color:${m.net>=0?'#1e6038':'#c53030'}">${m.net<0?'-':'+'}$${fmtMoney(Math.abs(m.net))}</b>${act.rows.length?`<span style="font-size:.62rem;color:#1e6038">已實收 $${fmtMoney(act.inn)}</span><span style="font-size:.62rem;color:#c53030">已實付 $${fmtMoney(act.out)}</span>`:''}<button class="nav-btn" style="font-size:.62rem;padding:2px 10px" onclick="ctToggleRows()">${_ctExpand?'收起明細 ▴':'展開明細 ▾'}</button></div>
         </div>
         <div class="cmh-pills">
           ${pill('A',sumBy(m.inflows,'A'))}${pill('B',sumBy(m.inflows,'B'))}${pill('C',sumBy(m.inflows,'C'))}
           ${pill('O',sumBy(m.outflows,'O'))}${pill('SAL',sumBy(m.outflows,'SAL'))}${pill('PEXP',sumBy(m.outflows,'PEXP'))}${pill('L',sumBy(m.outflows,'L'))}
         </div>
       </div>
-      ${_ctExpand?`<div class="fc-rows">${rows}</div>`:''}
+      ${_ctExpand?`
+        ${act.rows.length?`<div class="fc-rows" style="border-color:var(--green-line);margin-bottom:8px">
+          <div style="padding:6px 12px;font-size:.64rem;font-weight:800;color:var(--green);background:var(--green-soft);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><span>✅ 本月已實際收付（${act.rows.length} 筆）</span><span style="font-family:'JetBrains Mono',monospace">+$${fmtMoney(act.inn)}　-$${fmtMoney(act.out)}　淨 ${act.inn-act.out<0?'-':''}$${fmtMoney(Math.abs(act.inn-act.out))}</span></div>
+          ${act.rows.map(a=>`<div class="fc-line" ${a.click?`onclick="${a.click}"`:''}>
+            <div class="fc-lab">${escHtml(a.label)}${a.date?`<span class="fc-date">${escHtml(a.date)}</span>`:''}</div>
+            <span class="fc-tier" style="color:${a.dir>0?'#1e6038':'#c53030'};border-color:${a.dir>0?'#1e6038':'#c53030'}55">${a.dir>0?'已收':'已付'}</span>
+            <div class="fc-amt" style="color:${a.dir>0?'#1e6038':'#c53030'}">${a.dir>0?'+':'-'}$${fmtMoney(a.amt)}</div>
+          </div>`).join('')}
+        </div>`:''}
+        <div class="fc-rows">
+          ${rows?`<div style="padding:6px 12px;font-size:.64rem;font-weight:800;color:var(--amber);background:var(--amber-soft)">⏳ 預估（未收未付）</div>${rows}`:'<div style="padding:10px;text-align:center;color:#999;font-size:.7rem">此月份已無未收未付項目</div>'}
+        </div>`:''}
     </section>`;
   }).join('');
   el.innerHTML=`
