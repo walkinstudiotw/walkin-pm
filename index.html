@@ -7593,6 +7593,15 @@ function renderInvoiceEditor(){
         <label class="form-label">專案優惠（稅後扣除${inv.taxExempt?'；不含免稅沖銷額':''}）</label>
         <input class="form-input" type="number" inputmode="numeric" min="0" value="${inv.discount||0}" placeholder="0" oninput="updateInvoiceField('discount',parseInt(this.value)||0)">
       </div>
+      ${(inv.items||[]).some(it=>invoiceItemBundle(it))?`<div class="form-group">
+        <label class="form-label" title="PDF 上 Bundle 內含項目的顯示方式：項目＋金額／僅項目名稱／完全不列（只留一行總價）">Bundle 細項（PDF 顯示）</label>
+        <select class="form-select" onchange="updateInvoiceField('bundleDetailMode',this.value)">
+          ${(()=>{const m=inv.bundleDetailMode||'full';
+            return `<option value="full" ${m==='full'?'selected':''}>顯示項目＋金額</option>
+            <option value="names" ${m==='names'?'selected':''}>僅顯示項目</option>
+            <option value="off" ${m==='off'?'selected':''}>不顯示</option>`;})()}
+        </select>
+      </div>`:''}
       <div class="form-group">
         <label class="form-label">狀態</label>
         <select class="status-select" data-status="${inv.status==='draft'?'todo':(inv.status==='sent'?'editing':'done')}" style="font-size:.78rem;padding:5px 22px 5px 9px;width:auto" onchange="updateInvoiceField('status',this.value);this.dataset.status=(this.value==='draft'?'todo':(this.value==='sent'?'editing':'done'))">
@@ -8405,6 +8414,13 @@ async function sendInvoiceViaWebhook(){
   }
 }
 
+// Invoice line → its Bundle work item (or null)
+function invoiceItemBundle(it){
+  if(!it||it.isAddon)return null;
+  const bwId=it.bundleSourceId||(it.sourceWorkItemId&&S.workItems[it.sourceWorkItemId]?.isBundle?it.sourceWorkItemId:null);
+  const bw=bwId?S.workItems[bwId]:null;
+  return bw?.isBundle?bw:null;
+}
 // ── INVOICE PDF TEMPLATE (reuses Template D structure with INVOICE branding) ──
 function buildInvoicePdfHtml(inv,client){
   ensureInvoice(inv);
@@ -8451,8 +8467,7 @@ function buildInvoicePdfHtml(inv,client){
         addonContribution+=(items[k].defaultPrice||0)*(items[k].qty==null?1:items[k].qty);
       }
       const mergedSub=baseSub+addonContribution;
-      const bwId=it.bundleSourceId||(it.sourceWorkItemId&&S.workItems[it.sourceWorkItemId]?.isBundle?it.sourceWorkItemId:null);
-      const bw=bwId?S.workItems[bwId]:null;
+      const bw=invoiceItemBundle(it);
       html+=`<tr>
         <td>${escHtml(it.serviceLabel||'—')}</td>
         <td>${escHtml(it.label)}</td>
@@ -8462,7 +8477,9 @@ function buildInvoicePdfHtml(inv,client){
         <td class="right">$${fmtMoney(mergedSub)}</td>
       </tr>`;
       // Bundle children (info-only, no subtotal)
-      if(bw?.isBundle&&bw.bundleChildIds?.length){
+      // bundleDetailMode：'full'=項目＋金額（預設）/'names'=僅項目名稱/'off'=不列
+      const bMode=inv.bundleDetailMode||'full';
+      if(bw?.isBundle&&bw.bundleChildIds?.length&&bMode!=='off'){
         const subMap=bw.bundleChildSubItems||{};
         const childResolved=bw.bundleChildIds.map(cid=>{
           const ci=S.workItems[cid];if(!ci)return null;
@@ -8476,17 +8493,19 @@ function buildInvoicePdfHtml(inv,client){
             price,unit,
           };
         }).filter(Boolean);
+        const showAmt=bMode==='full';
         html+=childResolved.map(ci=>`<tr class="bundle-info-child">
           <td></td>
           <td>▸ ${escHtml(ci.label)}</td>
-          <td class="right">$${fmtMoney(ci.price)}</td>
-          <td class="right">1</td>
-          <td class="right">${escHtml(ci.unit||'—')}</td>
+          <td class="right">${showAmt?`$${fmtMoney(ci.price)}`:''}</td>
+          <td class="right">${showAmt?'1':''}</td>
+          <td class="right">${showAmt?escHtml(ci.unit||'—'):''}</td>
           <td></td>
         </tr>`).join('');
+        // 優惠以此張 invoice 上的實際單價計算（使用者可能改過價，不用項目庫原價）
         const sumChildren=childResolved.reduce((s,ci)=>s+(ci.price||0),0);
-        const bundleSaving=sumChildren-(bw.defaultPrice||0);
-        if(bundleSaving>0){
+        const bundleSaving=sumChildren-(it.defaultPrice||0);
+        if(showAmt&&bundleSaving>0){
           html+=`<tr class="bundle-info-saving">
             <td colspan="5" class="right">Bundle 優惠</td>
             <td class="right">-$${fmtMoney(bundleSaving)}</td>
