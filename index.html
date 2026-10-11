@@ -10252,7 +10252,7 @@ function renderOutsourceByMonth(entries){
     _osSel=_osKeys.find(k=>k!=='(未設交期)'&&k>=curYM)||_osKeys[_osKeys.length-1]||null;
   }
   return monthKeys.filter(m=>m===_osSel).map(m=>{
-    const arr=byMonth.get(m).sort((a,b)=>(b.dueDate||'').localeCompare(a.dueDate||'')||a.personLabel.localeCompare(b.personLabel,'zh-Hant'));
+    const arr=byMonth.get(m).sort((a,b)=>(a.dueDate||'9999').localeCompare(b.dueDate||'9999')||a.personLabel.localeCompare(b.personLabel,'zh-Hant')); // 交期早→晚（該先付的在上）
     let total=0,paid=0;
     arr.forEach(e=>{total+=e.amount;if(e.paid)paid+=e.amount;});
     const pend=total-paid;
