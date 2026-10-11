@@ -3431,6 +3431,10 @@ function openEditCase(id){
   // 協作：範本＋本集清單帶回
   _fCollabTpl=(c.collabTemplate||[]).map(x=>({...x}));
   _fCollabs=(c.collabs||[]).map(x=>({...x}));
+  // 附屬案件還沒有協作時，開表單即預設帶入主案範本（存檔才會生效；不要的項目可先刪）
+  if(!_fCollabs.length&&c.linkedToCaseId&&!c.isProject&&_applyTplToFCollabs(c.linkedToCaseId)){
+    toast('已自動帶入主案協作範本（儲存後生效）');
+  }
   renderFCollabTpl();renderFCollabs();updateFCollabVisibility();
   // restore outsource detail (outsourcerId / tier / rush)
   document.getElementById('f-outsourcer-id').value=c.outsource?.outsourcerId||'';
@@ -3740,6 +3744,11 @@ function setFlinkValue(cid,label){
   document.getElementById('flink-trigger-text').textContent=label;
   closePicker('flink');
   updateFCollabVisibility();
+  // 掛上專案時預設帶入主案協作範本（可在下方清單刪改）
+  if(cid&&!document.getElementById('f-is-project').checked){
+    const added=_applyTplToFCollabs(cid);
+    if(added)toast(`已自動帶入主案協作範本 ${added} 筆（可於下方調整）`);
+  }
 }
 // Track per-case addon state: [{addonId,label,amount,qty}]
 let _fAddons=[];
@@ -3902,18 +3911,24 @@ function renderFCollabs(){
   </div>`).join('');
   _fCollabsTotal();
 }
-// 帶入主案範本（附屬集手動觸發；只補缺少的範本項）
-function applyParentTplToForm(){
-  const linkedTo=document.getElementById('f-linked-to')?.value;
-  const parent=linkedTo?S.cases[linkedTo]:null;
-  if(!parent?.collabTemplate){toast('主案件沒有協作範本',true);return;}
+// 帶入主案範本到表單（只補缺少的範本項），回傳新增筆數
+function _applyTplToFCollabs(parentId){
+  const parent=parentId?S.cases[parentId]:null;
+  if(!parent?.collabTemplate)return 0;
   let added=0;
   parent.collabTemplate.filter(t=>t.per!=='once').forEach(t=>{
     if(_fCollabs.some(c=>c.tplId===t.id))return;
     _fCollabs.push({id:uid(),tplId:t.id,outsourcerId:t.outsourcerId||null,name:t.name||'',role:t.role||'',amount:t.amount||0,paid:false,paidDate:null});
     added++;
   });
-  renderFCollabs();
+  if(added)renderFCollabs();
+  return added;
+}
+// 手動觸發版（按鈕）
+function applyParentTplToForm(){
+  const linkedTo=document.getElementById('f-linked-to')?.value;
+  if(!linkedTo||!S.cases[linkedTo]?.collabTemplate){toast('主案件沒有協作範本',true);return;}
+  const added=_applyTplToFCollabs(linkedTo);
   toast(added?`已帶入 ${added} 筆協作`:'範本項目都已在清單中');
 }
 // 範本「單次」項目 → 物化/校正到專案自己的 collabs（保留已付快照）
