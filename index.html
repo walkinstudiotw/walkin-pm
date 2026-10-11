@@ -3995,6 +3995,16 @@ function collabTogglePaid(caseId,collabId,checked){
   renderCashflow();
   toast(checked?`已付款 — ${collabName(cb)} $${fmtMoney(cb.amount||0)}`:'已改回未付');
 }
+// 修改外包付款日期（paidAt 存時間戳；取正午避免時區偏移）
+function outsourceSetPaidDate(caseId,val){
+  const cs=S.cases[caseId];if(!cs||!cs.outsource||!cs.outsource.paidAt)return;
+  if(!val)return; // 清空不動作；取消付款請切「未付」
+  cs.outsource.paidAt=new Date(val+'T12:00:00').getTime();
+  cs.updatedAt=Date.now();
+  saveCaseObj(cs);
+  renderCashflow();
+  toast('付款日期已更新：'+val);
+}
 // 修改協作付款日期（金流應付款區，點日期直接改）
 function collabSetPaidDate(caseId,collabId,val){
   const cs=S.cases[caseId];if(!cs)return;
@@ -10138,10 +10148,12 @@ function buildPayableEntries(){
     if(!cs)return;
     if(cs.isOutsourced&&cs.outsource?.outsourcerId){
       const o=S.outsourcers[cs.outsource.outsourcerId];
+      const pd=cs.outsource.paidAt?new Date(cs.outsource.paidAt):null;
       out.push({kind:'outsource',caseId:cs.id,title:cs.title||'(無標題)',clientId:cs.clientId,dueDate:cs.dueDate||'',
         personKey:'o:'+cs.outsource.outsourcerId,personLabel:o?.name||'(已刪除)',outsourcerId:cs.outsource.outsourcerId,
         role:[cs.outsource.tierLabel||'',cs.outsource.isRush?'急件':''].filter(Boolean).join('·'),
-        amount:computeOutsourceCost(cs),paid:!!cs.outsource.paidAt,paidDate:''});
+        amount:computeOutsourceCost(cs),paid:!!cs.outsource.paidAt,
+        paidDate:pd?`${pd.getFullYear()}-${String(pd.getMonth()+1).padStart(2,'0')}-${String(pd.getDate()).padStart(2,'0')}`:''});
     }
     (cs.collabs||[]).forEach(cb=>{
       const amt=parseInt(cb.amount)||0;
@@ -10162,11 +10174,14 @@ function renderPayableRow(e){
       <button class="${e.paid?'active paid':''}" onclick="setOutsourcePaid('${e.caseId}',true)">已付</button>`
     :`<button class="${!e.paid?'active sent':''}" onclick="collabTogglePaid('${e.caseId}','${e.collabId}',false)">未付</button>
       <button class="${e.paid?'active paid':''}" onclick="collabTogglePaid('${e.caseId}','${e.collabId}',true)">已付</button>`;
-  // 已付的協作款：付款日期可直接點擊修改
-  const paidDateHtml=e.paid&&e.kind==='collab'
+  // 已付款項（協作與外包皆可）：付款日期可直接點擊修改
+  const dateOnChange=e.kind==='collab'
+    ?`collabSetPaidDate('${e.caseId}','${e.collabId}',this.value)`
+    :`outsourceSetPaidDate('${e.caseId}',this.value)`;
+  const paidDateHtml=e.paid
     ?`<div style="color:#1e6038;display:flex;align-items:center;justify-content:flex-end;gap:2px" onclick="event.stopPropagation()">付
-       <input type="date" value="${escAttr(e.paidDate||'')}" onchange="collabSetPaidDate('${e.caseId}','${e.collabId}',this.value)" title="點擊修改付款日期" style="border:none;background:transparent;color:#1e6038;font-size:.62rem;font-family:'JetBrains Mono',monospace;width:98px;padding:0;cursor:pointer"></div>`
-    :(e.paid&&e.paidDate?`<div style="color:#1e6038">付 ${escHtml(e.paidDate.slice(5))}</div>`:'');
+       <input type="date" value="${escAttr(e.paidDate||'')}" onchange="${dateOnChange}" title="點擊修改付款日期" style="border:none;background:transparent;color:#1e6038;font-size:.62rem;font-family:'JetBrains Mono',monospace;width:98px;padding:0;cursor:pointer"></div>`
+    :'';
   return `<div class="cash-line" style="grid-template-columns:1fr 90px 80px 100px 90px;cursor:pointer" onclick="openEditCase('${e.caseId}')">
     <div class="lab">${escHtml(e.title)}<div class="who">${whoBits.join(' · ')}</div></div>
     <div class="num" style="font-size:.66rem;color:#888">${e.dueDate||'—'}${paidDateHtml}</div>
