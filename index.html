@@ -3995,6 +3995,17 @@ function collabTogglePaid(caseId,collabId,checked){
   renderCashflow();
   toast(checked?`已付款 — ${collabName(cb)} $${fmtMoney(cb.amount||0)}`:'已改回未付');
 }
+// 修改協作付款日期（金流應付款區，點日期直接改）
+function collabSetPaidDate(caseId,collabId,val){
+  const cs=S.cases[caseId];if(!cs)return;
+  const cb=(cs.collabs||[]).find(x=>x.id===collabId);if(!cb||!cb.paid)return;
+  if(!val)return; // 清空不處理；要取消付款請切回「未付」
+  cb.paidDate=val;
+  cs.updatedAt=Date.now();
+  saveCaseObj(cs);
+  renderCashflow();
+  toast('付款日期已更新：'+val);
+}
 // ── 案件支出（多筆，可自訂分類；cs.cost 存合計、cs.costItems 存明細）──
 let _fCosts=[];
 const DEFAULT_COST_CATS=['錄音室','器材','交通','助理/人力','軟體訂閱','其他'];
@@ -10151,9 +10162,14 @@ function renderPayableRow(e){
       <button class="${e.paid?'active paid':''}" onclick="setOutsourcePaid('${e.caseId}',true)">已付</button>`
     :`<button class="${!e.paid?'active sent':''}" onclick="collabTogglePaid('${e.caseId}','${e.collabId}',false)">未付</button>
       <button class="${e.paid?'active paid':''}" onclick="collabTogglePaid('${e.caseId}','${e.collabId}',true)">已付</button>`;
+  // 已付的協作款：付款日期可直接點擊修改
+  const paidDateHtml=e.paid&&e.kind==='collab'
+    ?`<div style="color:#1e6038;display:flex;align-items:center;justify-content:flex-end;gap:2px" onclick="event.stopPropagation()">付
+       <input type="date" value="${escAttr(e.paidDate||'')}" onchange="collabSetPaidDate('${e.caseId}','${e.collabId}',this.value)" title="點擊修改付款日期" style="border:none;background:transparent;color:#1e6038;font-size:.62rem;font-family:'JetBrains Mono',monospace;width:98px;padding:0;cursor:pointer"></div>`
+    :(e.paid&&e.paidDate?`<div style="color:#1e6038">付 ${escHtml(e.paidDate.slice(5))}</div>`:'');
   return `<div class="cash-line" style="grid-template-columns:1fr 90px 80px 100px 90px;cursor:pointer" onclick="openEditCase('${e.caseId}')">
     <div class="lab">${escHtml(e.title)}<div class="who">${whoBits.join(' · ')}</div></div>
-    <div class="num" style="font-size:.66rem;color:#888">${e.dueDate||'—'}${e.paid&&e.paidDate?`<div style="color:#1e6038">付 ${escHtml(e.paidDate.slice(5))}</div>`:''}</div>
+    <div class="num" style="font-size:.66rem;color:#888">${e.dueDate||'—'}${paidDateHtml}</div>
     <div class="num">$${fmtMoney(e.amount)}</div>
     <div onclick="event.stopPropagation()"><div class="cash-status-toggle">${toggle}</div></div>
     <div class="num" style="color:${e.paid?'#1e6038':'#c53030'};font-weight:700">$${fmtMoney(e.amount)}</div>
