@@ -1359,7 +1359,7 @@ tr.cf-archhead td{background:#fff4e6;border-top:1px solid #f0c878;color:#a86a00;
     <div class="form-row-3">
       <div class="form-group">
         <label class="form-label">交期</label>
-        <input class="form-input" id="f-due" type="date" onchange="updateFShareVisibility()">
+        <input class="form-input" id="f-due" type="date" onchange="updateFShareVisibility();renderFCollabs()">
       </div>
       <div class="form-group">
         <label class="form-label">專案指派</label>
@@ -3891,6 +3891,7 @@ function updateFCollab(i,k,v){
   if(k==='person'){_collabPersonChange(x,v);renderFCollabs();return;}
   if(k==='role'){x.role=v;return;}
   if(k==='amount'){x.amount=parseInt(v)||0;_fCollabsTotal();return;}
+  if(k==='due'){x.dueDate=v||null;renderFCollabs();return;}
 }
 function _fCollabsTotal(){
   const el=document.getElementById('f-collabs-total');
@@ -3902,10 +3903,15 @@ function renderFCollabs(){
     list.innerHTML='<div style="font-size:.64rem;color:#999">尚無協作者 — 附屬集會在建立時自動帶入主案範本；也可手動加</div>';
     _fCollabsTotal();return;
   }
-  list.innerHTML=_fCollabs.map((x,i)=>`<div style="display:grid;grid-template-columns:1.1fr 1fr 90px 66px 26px;gap:6px;align-items:center;background:#fff;border:1px solid #c8d8ec;border-radius:6px;padding:4px 6px">
+  const caseDue=document.getElementById('f-due')?.value||'';
+  list.innerHTML=_fCollabs.map((x,i)=>`<div style="display:grid;grid-template-columns:1.1fr 1fr 90px 118px 66px 26px;gap:6px;align-items:center;background:#fff;border:1px solid #c8d8ec;border-radius:6px;padding:4px 6px">
     <select class="form-select" style="font-size:.7rem;padding:3px 6px;min-width:0" onchange="updateFCollab(${i},'person',this.value)">${_collabPersonOpts(x)}</select>
     <input class="form-input" value="${escHtml(x.role||'')}" placeholder="角色/項目" oninput="updateFCollab(${i},'role',this.value)" style="font-size:.7rem;padding:3px 6px">
     <input class="form-input" type="number" value="${x.amount||''}" placeholder="金額" inputmode="numeric" oninput="updateFCollab(${i},'amount',this.value)" style="font-size:.7rem;padding:3px 6px;font-family:'JetBrains Mono',monospace;text-align:right">
+    <span style="display:flex;align-items:center;gap:2px;min-width:0" title="${x.dueDate?'自訂交期 — 按 ↺ 恢復連動案件交期':'連動案件交期 — 可改'}">
+      <input class="form-input" type="date" value="${escAttr(x.dueDate||caseDue)}" onchange="updateFCollab(${i},'due',this.value===document.getElementById('f-due')?.value?'':this.value)" style="font-size:.66rem;padding:3px 4px;min-width:0;font-family:'JetBrains Mono',monospace;color:${x.dueDate?'#a86a00':'#888'};font-weight:${x.dueDate?700:400}">
+      ${x.dueDate?`<button type="button" onclick="updateFCollab(${i},'due','')" style="border:0;background:transparent;color:#a86a00;cursor:pointer;padding:0;font-size:.7rem">↺</button>`:''}
+    </span>
     <span style="font-size:.6rem;font-weight:700;color:${x.paid?'var(--green)':'var(--amber)'};text-align:center">${x.paid?`已付${x.paidDate?'<br>'+escHtml(x.paidDate.slice(5)):''}`:'未付'}</span>
     <button type="button" class="act-btn del" onclick="delFCollab(${i})" title="移除（已付的請先在金流頁取消付款）" style="padding:2px 4px">✕</button>
   </div>`).join('');
@@ -4319,7 +4325,7 @@ function saveCase(){
     // 專案本身的 collabs＝範本「單次」項目物化（保留已付快照）
     _collabsAtSave=reconcileOnceCollabs(S.editCaseId?(S.cases[S.editCaseId]?.collabs||[]):[],_collabTplAtSave);
   }else{
-    _collabsAtSave=_fCollabs.filter(x=>(x.outsourcerId||x.name)&&(x.amount||0)>0).map(x=>({id:x.id,tplId:x.tplId||null,outsourcerId:x.outsourcerId||null,name:x.name||'',role:x.role||'',amount:x.amount||0,paid:!!x.paid,paidDate:x.paidDate||null}));
+    _collabsAtSave=_fCollabs.filter(x=>(x.outsourcerId||x.name)&&(x.amount||0)>0).map(x=>({id:x.id,tplId:x.tplId||null,outsourcerId:x.outsourcerId||null,name:x.name||'',role:x.role||'',amount:x.amount||0,paid:!!x.paid,paidDate:x.paidDate||null,dueDate:x.dueDate||null}));
     if(!S.editCaseId&&linkedToCaseId&&!_collabsAtSave.length){
       (S.cases[linkedToCaseId]?.collabTemplate||[]).filter(t=>t.per!=='once').forEach(t=>{
         _collabsAtSave.push({id:uid(),tplId:t.id,outsourcerId:t.outsourcerId||null,name:t.name||'',role:t.role||'',amount:t.amount||0,paid:false,paidDate:null});
@@ -4353,6 +4359,7 @@ function saveCase(){
       // UI 已移除 — 保留既有值（歷史分潤計算仍需）；新案件預設 project
       costBearer:(S.editCaseId?(S.cases[S.editCaseId]?.outsource?.costBearer??null):null)??'project',
       paidAt:S.editCaseId?(S.cases[S.editCaseId]?.outsource?.paidAt??null):null,
+      dueDate:S.editCaseId?(S.cases[S.editCaseId]?.outsource?.dueDate??null):null,
     }:null,
     // 分潤設定 UI 已移除 — 既有案件保留原值（歷史分潤不變），新案件預設 true
     shareWithStudio:(S.editCaseId?(S.cases[S.editCaseId]?.shareWithStudio!==false):true),
@@ -10141,6 +10148,18 @@ function toggleCashRow(id){
 }
 // ── 應付外包款 by outsourcer ──
 // One outsource case row (used by both grouping modes)
+// 協作／外包交期：預設連動案件交期；有自訂（x.dueDate）則用自訂
+function payDue(cs,x){return (x&&x.dueDate)||cs?.dueDate||'';}
+// 修改協作／外包交期（collabId 為 null＝外包）；清空或等於案件交期＝回到連動
+function payableSetDue(caseId,collabId,val){
+  const cs=S.cases[caseId];if(!cs)return;
+  const x=collabId?(cs.collabs||[]).find(c=>c.id===collabId):cs.outsource;if(!x)return;
+  x.dueDate=(val&&val!==cs.dueDate)?val:null;
+  cs.updatedAt=Date.now();
+  saveCaseObj(cs);
+  renderCashflow();
+  toast(x.dueDate?'交期已改為 '+x.dueDate:'交期已恢復連動案件交期');
+}
 // 統一應付項目：單一外包（kind:'outsource'）＋協作明細（kind:'collab'）
 function buildPayableEntries(){
   const out=[];
@@ -10149,7 +10168,7 @@ function buildPayableEntries(){
     if(cs.isOutsourced&&cs.outsource?.outsourcerId){
       const o=S.outsourcers[cs.outsource.outsourcerId];
       const pd=cs.outsource.paidAt?new Date(cs.outsource.paidAt):null;
-      out.push({kind:'outsource',caseId:cs.id,title:cs.title||'(無標題)',clientId:cs.clientId,dueDate:cs.dueDate||'',
+      out.push({kind:'outsource',caseId:cs.id,title:cs.title||'(無標題)',clientId:cs.clientId,dueDate:payDue(cs,cs.outsource),dueCustom:!!cs.outsource.dueDate,caseDue:cs.dueDate||'',
         personKey:'o:'+cs.outsource.outsourcerId,personLabel:o?.name||'(已刪除)',outsourcerId:cs.outsource.outsourcerId,
         role:[cs.outsource.tierLabel||'',cs.outsource.isRush?'急件':''].filter(Boolean).join('·'),
         amount:computeOutsourceCost(cs),paid:!!cs.outsource.paidAt,
@@ -10158,7 +10177,7 @@ function buildPayableEntries(){
     (cs.collabs||[]).forEach(cb=>{
       const amt=parseInt(cb.amount)||0;
       if(amt<=0)return;
-      out.push({kind:'collab',caseId:cs.id,collabId:cb.id,title:cs.title||'(無標題)',clientId:cs.clientId,dueDate:cs.dueDate||'',
+      out.push({kind:'collab',caseId:cs.id,collabId:cb.id,title:cs.title||'(無標題)',clientId:cs.clientId,dueDate:payDue(cs,cb),dueCustom:!!cb.dueDate,caseDue:cs.dueDate||'',
         personKey:cb.outsourcerId?('o:'+cb.outsourcerId):('n:'+(cb.name||'?')),personLabel:collabName(cb),outsourcerId:cb.outsourcerId||null,
         role:cb.role||'',amount:amt,paid:!!cb.paid,paidDate:cb.paidDate||''});
     });
@@ -10182,9 +10201,12 @@ function renderPayableRow(e){
     ?`<div style="color:#1e6038;display:flex;align-items:center;justify-content:flex-end;gap:2px" onclick="event.stopPropagation()">付
        <input type="date" value="${escAttr(e.paidDate||'')}" onchange="${dateOnChange}" title="點擊修改付款日期" style="border:none;background:transparent;color:#1e6038;font-size:.62rem;font-family:'JetBrains Mono',monospace;width:98px;padding:0;cursor:pointer"></div>`
     :'';
-  return `<div class="cash-line" style="grid-template-columns:1fr 90px 80px 100px 90px;cursor:pointer" onclick="openEditCase('${e.caseId}')">
+  // 交期：預設連動案件交期，可直接改；自訂時標色並附「↺」恢復連動
+  const cbArg=e.kind==='collab'?`'${e.collabId}'`:'null';
+  const dueHtml=`<div style="display:flex;align-items:center;justify-content:flex-end;gap:2px">${e.dueCustom?`<button type="button" onclick="payableSetDue('${e.caseId}',${cbArg},'')" title="恢復連動案件交期（${escAttr(e.caseDue||'未設')}）" style="border:0;background:transparent;color:#a86a00;cursor:pointer;padding:0;font-size:.66rem">↺</button>`:''}<input type="date" value="${escAttr(e.dueDate||'')}" onchange="payableSetDue('${e.caseId}',${cbArg},this.value)" title="${e.dueCustom?`自訂交期（案件交期 ${escAttr(e.caseDue||'未設')}）`:'連動案件交期 — 點擊可改'}" style="border:none;background:transparent;color:${e.dueCustom?'#a86a00':'#888'};font-weight:${e.dueCustom?700:400};font-size:.66rem;font-family:'JetBrains Mono',monospace;width:98px;padding:0;cursor:pointer;text-align:right"></div>`;
+  return `<div class="cash-line" style="grid-template-columns:1fr 110px 80px 100px 90px;cursor:pointer" onclick="openEditCase('${e.caseId}')">
     <div class="lab">${escHtml(e.title)}<div class="who">${whoBits.join(' · ')}</div></div>
-    <div class="num" style="font-size:.66rem;color:#888">${e.dueDate||'—'}${paidDateHtml}</div>
+    <div class="num" style="font-size:.66rem;color:#888" onclick="event.stopPropagation()">${dueHtml}${paidDateHtml}</div>
     <div class="num">$${fmtMoney(e.amount)}</div>
     <div onclick="event.stopPropagation()"><div class="cash-status-toggle">${toggle}</div></div>
     <div class="num" style="color:${e.paid?'#1e6038':'#c53030'};font-weight:700">$${fmtMoney(e.amount)}</div>
@@ -10309,7 +10331,7 @@ function renderOutsourceByMonth(entries){
       </div>
       <div class="cash-row" style="margin:0">
         <div class="cash-row-detail" style="display:block">
-          <div class="cash-line cash-line-hdr" style="grid-template-columns:1fr 90px 80px 100px 90px">
+          <div class="cash-line cash-line-hdr" style="grid-template-columns:1fr 110px 80px 100px 90px">
             <div>案件</div><div style="text-align:right">交期</div><div style="text-align:right">金額</div><div style="text-align:center">付款狀態</div><div style="text-align:right">小計</div>
           </div>
           ${rows}
@@ -10342,7 +10364,7 @@ function renderOutsourceByPerson(entries){
         <div></div>
       </div>
       <div class="cash-row-detail" style="display:block">
-        <div class="cash-line cash-line-hdr" style="grid-template-columns:1fr 90px 80px 100px 90px">
+        <div class="cash-line cash-line-hdr" style="grid-template-columns:1fr 110px 80px 100px 90px">
           <div>案件</div><div style="text-align:right">交期</div><div style="text-align:right">金額</div><div style="text-align:center">付款狀態</div><div style="text-align:right">小計</div>
         </div>
         ${rowsHtml}
@@ -10498,8 +10520,9 @@ function computeCashTimeline(){
     const cost=computeOutsourceCost(cs);
     if(cost<=0)return;
     const o=S.outsourcers[cs.outsource.outsourcerId];
-    const ym=(cs.dueDate||'').slice(0,7);
-    buckets.get(keyFor(ym)).outflows.push({tier:'O',label:`外包 ${o?.name||'?'}｜${cs.title||''}`,date:cs.dueDate||'',amt:cost,click:`openEditCase('${cs.id}')`});
+    const due=payDue(cs,cs.outsource);
+    const ym=due.slice(0,7);
+    buckets.get(keyFor(ym)).outflows.push({tier:'O',label:`外包 ${o?.name||'?'}｜${cs.title||''}`,date:due,amt:cost,click:`openEditCase('${cs.id}')`});
   });
   // O: 協作待付（一集多人）→ 案件交期月份；專案「單次」項掛專案交期
   Object.values(S.cases||{}).forEach(cs=>{
@@ -10507,7 +10530,8 @@ function computeCashTimeline(){
       if(cb.paid)return;
       const amt=parseInt(cb.amount)||0;
       if(amt<=0)return;
-      buckets.get(keyFor((cs.dueDate||'').slice(0,7))).outflows.push({tier:'O',label:`協作 ${collabName(cb)}｜${cs.title||''}`,date:cs.dueDate||'',amt,click:`openEditCase('${cs.id}')`});
+      const due=payDue(cs,cb);
+      buckets.get(keyFor(due.slice(0,7))).outflows.push({tier:'O',label:`協作 ${collabName(cb)}｜${cs.title||''}`,date:due,amt,click:`openEditCase('${cs.id}')`});
     });
   });
   // 彙整
