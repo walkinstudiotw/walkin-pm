@@ -7551,7 +7551,7 @@ function doGenerateMonthlyInvoices(month){
 // ── INVOICE EDITOR ──
 function calcInvoiceTotal(inv){
   const subtotal=inv.items.reduce((s,i)=>s+(i.defaultPrice||0)*(i.qty==null?1:i.qty),0);
-  const taxRate=inv.taxRate||0;  // 5 (客戶開立發票) 或 0，建立時自動帶入，不可手改
+  const taxRate=inv.taxRate||0;  // 5 或 0：預設依客戶開立發票，可逐張手動（inv.taxManual）
   const tax=Math.round(subtotal*taxRate/100);
   const manualDiscount=Math.max(0,parseInt(inv.discount)||0);
   // 免稅優惠：發票照開 5%，但以同額列入專案優惠沖銷（客戶實付不含稅）
@@ -7575,7 +7575,7 @@ function renderInvoiceEditor(){
   const c=S.clients[inv.clientId];
   // Draft invoices follow the client's 開立發票 setting live — invoices created
   // before the client was flagged would otherwise be stuck at their creation-time rate
-  if(inv.status==='draft'&&c){
+  if(inv.status==='draft'&&c&&!inv.taxManual){
     const expectedRate=c.issuesReceipt?5:0;
     if((inv.taxRate||0)!==expectedRate){
       inv.taxRate=expectedRate;
@@ -7618,9 +7618,15 @@ function renderInvoiceEditor(){
         <input class="form-input" type="date" value="${escHtml((inv.dueDate||'').replace(/\//g,'-'))}" onchange="updateInvoiceField('dueDate',this.value.replace(/-/g,'/'))">
       </div>
       <div class="form-group">
-        <label class="form-label">稅率（依客戶「開立發票」設定）</label>
+        <label class="form-label">稅率（預設依客戶「開立發票」設定，可逐張修改）</label>
         <div style="display:flex;align-items:center;gap:12px;padding:7px 0;font-size:.78rem;flex-wrap:wrap">
-          <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:${(inv.taxRate||0)>0?'#1e6038':'#888'}">${inv.taxRate||0}%（固定）</span>
+          ${(()=>{
+            const r=inv.taxRate||0;
+            const def=c?(c.issuesReceipt?5:0):null;
+            const btn=(v,lab)=>`<button type="button" class="${r===v?'active '+(v>0?'paid':'sent'):''}" onclick="setInvoiceTaxRate(${v})">${lab}</button>`;
+            return `<div class="cash-status-toggle">${btn(5,'開發票 5%')}${btn(0,'不開 0%')}</div>
+              ${inv.taxManual&&def!=null?`<span style="font-size:.66rem;color:#a86a00;font-weight:700">手動（客戶預設 ${def}%）<button type="button" onclick="syncInvoiceTaxFromClient()" title="恢復依客戶設定" style="border:0;background:transparent;color:#a86a00;cursor:pointer;padding:0 2px">↺</button></span>`:`<span style="font-size:.66rem;color:#888">依客戶設定</span>`}`;
+          })()}
           ${((inv.taxRate||0)>0||S.clients[inv.clientId]?.issuesReceipt)?`<label style="display:flex;align-items:center;gap:5px;cursor:pointer;color:#a86a00" title="勾選＝稅內含於收款金額（工作室吸收）：有稅率時以專案優惠沖銷；金流分潤一律先扣 5% 稅">
             <input type="checkbox" ${inv.taxExempt?'checked':''} onchange="updateInvoiceField('taxExempt',this.checked)" style="accent-color:#a86a00">
             免稅優惠（稅內含於收款金額）
@@ -7628,7 +7634,7 @@ function renderInvoiceEditor(){
           ${(()=>{
             // Sent/paid invoices don't auto-sync — offer a manual refresh when
             // the stored rate no longer matches the client's 開立發票 setting
-            if(inv.status==='draft'||!c)return '';
+            if(inv.status==='draft'||!c||inv.taxManual)return '';
             const expected=c.issuesReceipt?5:0;
             if((inv.taxRate||0)===expected)return '';
             return `<button class="nav-btn" onclick="syncInvoiceTaxFromClient()" style="font-size:.66rem;padding:3px 8px;background:#fff8ee;border-color:#f0c878;color:#a86a00" title="客戶卡設定與此張不一致">↻ 依客戶設定改為 ${expected}%</button>`;
@@ -7762,11 +7768,24 @@ function updateInvoiceNumber(val){
   if(dup)toast(`⚠️ 編號「${n}」與其他 Invoice 重複，已儲存但建議修改`,true);
   else toast(`編號已改為 ${n}`);
 }
+// 手動切換此張稅率；與客戶預設相同＝回到「依客戶設定」（草稿繼續自動同步）
+function setInvoiceTaxRate(v){
+  const inv=S.invoices[S.selectedInvoiceId];if(!inv)return;
+  const c=S.clients[inv.clientId];
+  inv.taxRate=v;
+  inv.taxManual=c?(v!==(c.issuesReceipt?5:0)):true;
+  inv.updatedAt=Date.now();
+  recomputeInvoiceTotal(inv);
+  saveInvoiceObj(inv);
+  renderInvoiceEditor();renderInvoicePreview();
+  toast(`稅率已改為 ${v}%${inv.taxManual?'（此張手動）':''}`);
+}
 function syncInvoiceTaxFromClient(){
   const inv=S.invoices[S.selectedInvoiceId];if(!inv)return;
   const c=S.clients[inv.clientId];if(!c){toast('客戶不存在',true);return;}
   const expected=c.issuesReceipt?5:0;
   inv.taxRate=expected;
+  inv.taxManual=false;
   inv.updatedAt=Date.now();
   recomputeInvoiceTotal(inv);
   saveInvoiceObj(inv);
